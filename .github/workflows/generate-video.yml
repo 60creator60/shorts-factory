@@ -1,0 +1,529 @@
+name: Generate TikTok Short
+
+on:
+  workflow_dispatch:
+
+jobs:
+  generate-video:
+    runs-on: ubuntu-latest
+
+    env:
+      PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+      PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg espeak-ng fonts-dejavu-core
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests moviepy==1.0.3 pillow numpy imageio-ffmpeg
+
+      - name: Create automatic video generator
+        run: |
+          cat > generate_short.py <<'PY'
+          import os
+          import json
+          import math
+          import time
+          import random
+          import subprocess
+          from pathlib import Path
+
+          import requests
+          import numpy as np
+          from PIL import Image, ImageDraw, ImageFont
+
+          from moviepy.editor import (
+              VideoFileClip,
+              ImageClip,
+              CompositeVideoClip,
+              concatenate_videoclips,
+              AudioFileClip,
+              AudioClip,
+              CompositeAudioClip,
+          )
+          from moviepy.audio.fx.all import audio_fadein, audio_fadeout, volumex
+
+          WIDTH = 1080
+          HEIGHT = 1920
+          FPS = 30
+
+          PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "")
+          PIXABAY_API_KEY = os.getenv("PIXABAY_API_KEY", "")
+
+          ROOT = Path(".").resolve()
+          ASSETS = ROOT / "assets"
+          VIDEOS = ASSETS / "videos"
+          META = ASSETS / "metadata"
+          OUTPUT = ROOT / "output"
+
+          for d in [ASSETS, VIDEOS, META, OUTPUT]:
+              d.mkdir(parents=True, exist_ok=True)
+
+          FINAL_MP4 = OUTPUT / "top5_lieux_interdits.mp4"
+          VOICE_TXT = OUTPUT / "voice_script.txt"
+          VOICE_WAV = OUTPUT / "voice.wav"
+          PUBLICATION_JSON = OUTPUT / "publication.json"
+
+          SCRIPT = """Ce sont des endroits réels… mais presque personne n’a le droit d’y entrer.
+
+          Voici le top 5 des lieux les plus protégés de la planète. Et le numéro un existe depuis seulement soixante ans.
+
+          Numéro cinq : les Archives apostoliques du Vatican. C’est ouvert surtout à des chercheurs qualifiés, avec des règles très strictes.
+
+          Numéro quatre : la réserve mondiale de graines au Svalbard. Dans une montagne arctique, plus d’un million trois cent quatre-vingt mille échantillons de graines dorment à moins dix-huit degrés.
+
+          Numéro trois : Lascaux, en France. La vraie grotte est fermée au public depuis 1963. Pourquoi ? Nos respirations, la lumière et l’humidité menaçaient les peintures préhistoriques.
+
+          Numéro deux : Queimada Grande, au Brésil. Cette île protégée abrite une vipère endémique : seules les autorités et certains chercheurs y accèdent.
+
+          Numéro un : Surtsey, en Islande. Une île née d’une éruption en 1963. Là-bas, même poser le pied peut fausser l’expérience scientifique. Les visites sont interdites pour observer comment la vie colonise une terre neuve.
+
+          Lequel vous donne envie de regarder… de très loin ?"""
+
+          SCENES = [
+              {
+                  "id": "01_hook",
+                  "duration": 2,
+                  "title": "ENDROITS\nINTERDITS",
+                  "subtitle": "Ce sont des endroits réels…\nmais presque personne ne peut entrer.",
+                  "keywords": ["locked door", "security door", "dark corridor", "remote island"],
+                  "color": (18, 18, 24),
+              },
+              {
+                  "id": "02_promesse",
+                  "duration": 3,
+                  "title": "TOP 5\nRÉELS",
+                  "subtitle": "Voici le top 5\ndes lieux les plus protégés.",
+                  "keywords": ["world map dark", "map animation", "global locations"],
+                  "color": (12, 22, 35),
+              },
+              {
+                  "id": "03_vatican",
+                  "duration": 12,
+                  "title": "#5 ARCHIVES\nDU VATICAN",
+                  "title2": "Chercheurs qualifiés\nseulement",
+                  "subtitle": "Ouvert surtout\nà des chercheurs qualifiés.",
+                  "keywords": ["old library", "archive shelves", "ancient books", "historical archive"],
+                  "color": (70, 46, 25),
+              },
+              {
+                  "id": "04_svalbard",
+                  "duration": 12,
+                  "title": "#4 COFFRE\nÀ GRAINES",
+                  "title2": "-18 °C\nsous l’Arctique",
+                  "subtitle": "Dans une montagne arctique,\ndes graines dorment à -18 degrés.",
+                  "keywords": ["arctic mountain", "snow mountain", "ice tunnel", "frozen vault"],
+                  "color": (20, 55, 84),
+              },
+              {
+                  "id": "05_lascaux",
+                  "duration": 12,
+                  "title": "#3 LASCAUX\nFERMÉE",
+                  "title2": "Depuis\n1963",
+                  "subtitle": "La vraie grotte est fermée\ndepuis 1963.",
+                  "keywords": ["cave", "cave painting", "prehistoric art", "rock art"],
+                  "color": (55, 34, 18),
+              },
+              {
+                  "id": "06_queimada",
+                  "duration": 12,
+                  "title": "#2 ÎLE AUX\nSERPENTS",
+                  "title2": "Accès\nultra limité",
+                  "subtitle": "Cette île protégée\nabrite une vipère endémique.",
+                  "keywords": ["tropical island drone", "remote island", "viper snake", "jungle island"],
+                  "color": (18, 65, 42),
+              },
+              {
+                  "id": "07_surtsey",
+                  "duration": 14,
+                  "title": "#1\nSURTSEY",
+                  "title2": "Île\nlaboratoire",
+                  "subtitle": "Même poser le pied\npeut fausser l’expérience.",
+                  "keywords": ["volcanic island", "black lava coast", "Iceland ocean", "volcanic rock"],
+                  "color": (20, 23, 27),
+              },
+              {
+                  "id": "08_question",
+                  "duration": 3,
+                  "title": "LEQUEL\nTU CHOISIS ?",
+                  "subtitle": "Lequel vous donne envie\nde regarder de très loin ?",
+                  "keywords": ["world map dark", "remote island", "mysterious place"],
+                  "color": (16, 16, 22),
+              },
+          ]
+
+          def log(msg):
+              print(f"[SHORTS-FACTORY] {msg}")
+
+          def download_file(url, path):
+              try:
+                  with requests.get(url, stream=True, timeout=60) as r:
+                      r.raise_for_status()
+                      with open(path, "wb") as f:
+                          for chunk in r.iter_content(chunk_size=1024 * 1024):
+                              if chunk:
+                                  f.write(chunk)
+                  return path.exists() and path.stat().st_size > 100000
+              except Exception as e:
+                  log(f"Download failed: {e}")
+                  return False
+
+          def search_pexels(query):
+              if not PEXELS_API_KEY:
+                  return None
+              try:
+                  r = requests.get(
+                      "https://api.pexels.com/videos/search",
+                      headers={"Authorization": PEXELS_API_KEY},
+                      params={
+                          "query": query,
+                          "orientation": "portrait",
+                          "per_page": 8,
+                          "min_duration": 3,
+                          "max_duration": 60,
+                      },
+                      timeout=30,
+                  )
+                  if r.status_code >= 400:
+                      log(f"Pexels error {r.status_code}: {r.text[:120]}")
+                      return None
+                  videos = r.json().get("videos", [])
+                  return videos[0] if videos else None
+              except Exception as e:
+                  log(f"Pexels search failed: {e}")
+                  return None
+
+          def best_pexels_url(video):
+              files = video.get("video_files", [])
+              if not files:
+                  return None
+
+              def score(f):
+                  w = f.get("width", 0) or 0
+                  h = f.get("height", 0) or 0
+                  vertical = 1000000 if h >= w else 0
+                  return vertical + w * h
+
+              files = sorted(files, key=score, reverse=True)
+              return files[0].get("link")
+
+          def search_pixabay(query):
+              if not PIXABAY_API_KEY:
+                  return None
+              try:
+                  r = requests.get(
+                      "https://pixabay.com/api/videos/",
+                      params={
+                          "key": PIXABAY_API_KEY,
+                          "q": query,
+                          "safesearch": "true",
+                          "per_page": 8,
+                      },
+                      timeout=30,
+                  )
+                  if r.status_code >= 400:
+                      log(f"Pixabay error {r.status_code}: {r.text[:120]}")
+                      return None
+                  hits = r.json().get("hits", [])
+                  return hits[0] if hits else None
+              except Exception as e:
+                  log(f"Pixabay search failed: {e}")
+                  return None
+
+          def best_pixabay_url(hit):
+              videos = hit.get("videos", {})
+              for q in ["large", "medium", "small", "tiny"]:
+                  if q in videos and videos[q].get("url"):
+                      return videos[q]["url"]
+              return None
+
+          def get_scene_video(scene):
+              path = VIDEOS / f"{scene['id']}.mp4"
+              meta_path = META / f"{scene['id']}.json"
+
+              if path.exists() and path.stat().st_size > 100000:
+                  return path
+
+              for query in scene["keywords"]:
+                  log(f"Searching visual for {scene['id']}: {query}")
+
+                  pexels = search_pexels(query)
+                  if pexels:
+                      url = best_pexels_url(pexels)
+                      if url and download_file(url, path):
+                          meta_path.write_text(json.dumps({
+                              "source": "Pexels",
+                              "query": query,
+                              "id": pexels.get("id"),
+                              "url": pexels.get("url"),
+                          }, ensure_ascii=False, indent=2), encoding="utf-8")
+                          return path
+
+                  pixabay = search_pixabay(query)
+                  if pixabay:
+                      url = best_pixabay_url(pixabay)
+                      if url and download_file(url, path):
+                          meta_path.write_text(json.dumps({
+                              "source": "Pixabay",
+                              "query": query,
+                              "id": pixabay.get("id"),
+                              "pageURL": pixabay.get("pageURL"),
+                              "tags": pixabay.get("tags"),
+                              "user": pixabay.get("user"),
+                          }, ensure_ascii=False, indent=2), encoding="utf-8")
+                          return path
+
+              log(f"No visual found for {scene['id']}. Using generated background.")
+              return None
+
+          def generate_voice():
+              VOICE_TXT.write_text(SCRIPT, encoding="utf-8")
+              cmd = [
+                  "espeak-ng",
+                  "-v", "fr-fr",
+                  "-s", "178",
+                  "-p", "45",
+                  "-a", "160",
+                  "-w", str(VOICE_WAV),
+                  "-f", str(VOICE_TXT),
+              ]
+              subprocess.run(cmd, check=True)
+              log("Voice generated with espeak-ng")
+
+          def font(size):
+              return ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", size)
+
+          def text_image(text, w, h, size, color=(255, 255, 255, 255), stroke=(0, 0, 0, 255), sw=8):
+              img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+              draw = ImageDraw.Draw(img)
+              f = font(size)
+              lines = text.split("\n")
+              spacing = int(size * 0.25)
+              heights = []
+              widths = []
+
+              for line in lines:
+                  box = draw.textbbox((0, 0), line, font=f, stroke_width=sw)
+                  widths.append(box[2] - box[0])
+                  heights.append(box[3] - box[1])
+
+              total_h = sum(heights) + spacing * (len(lines) - 1)
+              y = (h - total_h) // 2
+
+              for i, line in enumerate(lines):
+                  x = (w - widths[i]) // 2
+                  line_color = color
+                  if line.strip().startswith("#"):
+                      line_color = (255, 215, 0, 255)
+                  draw.text((x, y), line, font=f, fill=line_color, stroke_width=sw, stroke_fill=stroke)
+                  y += heights[i] + spacing
+
+              return np.array(img)
+
+          def fallback_background(scene):
+              base = scene["color"]
+              img = Image.new("RGB", (WIDTH, HEIGHT), base)
+              draw = ImageDraw.Draw(img)
+
+              for y in range(HEIGHT):
+                  factor = y / HEIGHT
+                  r = int(base[0] * (0.75 + factor * 0.45))
+                  g = int(base[1] * (0.75 + factor * 0.45))
+                  b = int(base[2] * (0.75 + factor * 0.45))
+                  draw.line((0, y, WIDTH, y), fill=(r, g, b))
+
+              for _ in range(22):
+                  x = random.randint(-250, WIDTH)
+                  y = random.randint(-250, HEIGHT)
+                  radius = random.randint(120, 460)
+                  draw.ellipse((x, y, x + radius, y + radius), outline=(80, 80, 90), width=3)
+
+              path = OUTPUT / f"{scene['id']}_fallback.jpg"
+              img.save(path, quality=95)
+              return path
+
+          def crop_vertical(clip):
+              w, h = clip.size
+              target = WIDTH / HEIGHT
+
+              if w / h > target:
+                  new_w = int(h * target)
+                  x1 = int((w - new_w) / 2)
+                  clip = clip.crop(x1=x1, y1=0, width=new_w, height=h)
+              else:
+                  new_h = int(w / target)
+                  y1 = int(max(0, (h - new_h) / 2))
+                  clip = clip.crop(x1=0, y1=y1, width=w, height=min(h, new_h))
+
+              return clip.resize((WIDTH, HEIGHT))
+
+          def make_scene(scene, video_path):
+              duration = scene["duration"]
+
+              try:
+                  if video_path:
+                      base = VideoFileClip(str(video_path)).without_audio()
+                      if base.duration < duration:
+                          loops = math.ceil(duration / max(base.duration, 0.1))
+                          base = concatenate_videoclips([base] * loops)
+                      base = base.subclip(0, duration)
+                      base = crop_vertical(base)
+                  else:
+                      raise RuntimeError("No video path")
+              except Exception as e:
+                  log(f"Using fallback for {scene['id']}: {e}")
+                  base = ImageClip(str(fallback_background(scene))).set_duration(duration).resize((WIDTH, HEIGHT))
+
+              base = base.resize(lambda t: 1.02 + 0.045 * (t / max(duration, 0.1))).crop(
+                  x_center=WIDTH / 2,
+                  y_center=HEIGHT / 2,
+                  width=WIDTH,
+                  height=HEIGHT,
+              )
+
+              overlays = [base]
+
+              band = Image.new("RGBA", (WIDTH, 360), (0, 0, 0, 120))
+              overlays.append(ImageClip(np.array(band)).set_duration(duration).set_position(("center", HEIGHT - 470)))
+
+              title_size = 92
+              if "#1" in scene["title"]:
+                  title_size = 120
+              if "ENDROITS" in scene["title"]:
+                  title_size = 110
+
+              title = ImageClip(text_image(scene["title"], WIDTH, 360, title_size, sw=10)).set_duration(min(6, duration)).set_position(("center", 110))
+              overlays.append(title)
+
+              if "title2" in scene:
+                  t2 = ImageClip(text_image(scene["title2"], WIDTH, 260, 72, sw=8)).set_start(6).set_duration(duration - 6).set_position(("center", 280))
+                  overlays.append(t2)
+
+              sub = ImageClip(text_image(scene["subtitle"], WIDTH - 70, 280, 56, sw=8)).set_duration(duration).set_position(("center", HEIGHT - 420))
+              overlays.append(sub)
+
+              return CompositeVideoClip(overlays, size=(WIDTH, HEIGHT)).set_duration(duration)
+
+          def make_music(duration):
+              def fn(t):
+                  t = np.array(t)
+                  bass = 0.018 * np.sin(2 * np.pi * 55 * t)
+                  pulse = 0.009 * np.sin(2 * np.pi * 110 * t) * (0.5 + 0.5 * np.sin(2 * np.pi * 1.2 * t))
+                  air = 0.003 * np.sin(2 * np.pi * 220 * t)
+                  val = bass + pulse + air
+                  return np.vstack([val, val]).T if val.ndim else [val, val]
+              return AudioClip(fn, duration=duration, fps=44100)
+
+          def hit(start, freq=90, duration=0.18, volume=0.13):
+              def fn(t):
+                  t = np.array(t)
+                  env = np.exp(-18 * t)
+                  val = volume * env * np.sin(2 * np.pi * freq * t)
+                  return np.vstack([val, val]).T if val.ndim else [val, val]
+              return AudioClip(fn, duration=duration, fps=44100).set_start(start)
+
+          def whoosh(start, duration=0.3, volume=0.045):
+              def fn(t):
+                  t = np.array(t)
+                  sweep = np.sin(2 * np.pi * (180 + 650 * t) * t)
+                  env = np.sin(np.pi * t / duration)
+                  val = volume * sweep * env
+                  return np.vstack([val, val]).T if val.ndim else [val, val]
+              return AudioClip(fn, duration=duration, fps=44100).set_start(start)
+
+          def main():
+              if not PEXELS_API_KEY:
+                  raise RuntimeError("PEXELS_API_KEY is missing in GitHub Secrets")
+
+              log("Generating voice")
+              generate_voice()
+
+              log("Searching and downloading visuals")
+              paths = []
+              for scene in SCENES:
+                  paths.append(get_scene_video(scene))
+                  time.sleep(0.4)
+
+              log("Rendering scenes")
+              clips = [make_scene(scene, path) for scene, path in zip(SCENES, paths)]
+
+              final = concatenate_videoclips(clips, method="compose")
+              duration = final.duration
+              log(f"Video duration: {duration:.2f}s")
+
+              voice = AudioFileClip(str(VOICE_WAV))
+              voice = voice.fx(volumex, 1.0)
+
+              music = make_music(duration).fx(audio_fadein, 0.4).fx(audio_fadeout, 1.0).fx(volumex, 0.45)
+
+              sfx = [
+                  hit(0.00, freq=70, volume=0.20),
+                  whoosh(2.00),
+                  hit(5.00),
+                  hit(17.00),
+                  whoosh(29.00),
+                  hit(41.00),
+                  whoosh(52.70),
+                  hit(53.00, freq=70, volume=0.18),
+                  hit(67.00, freq=130, volume=0.10),
+              ]
+
+              audio = CompositeAudioClip([music, voice] + sfx).set_duration(duration)
+              final = final.set_audio(audio)
+
+              log("Exporting MP4")
+              final.write_videofile(
+                  str(FINAL_MP4),
+                  fps=FPS,
+                  codec="libx264",
+                  audio_codec="aac",
+                  bitrate="6500k",
+                  threads=4,
+                  preset="medium",
+              )
+
+              publication = {
+                  "titre": "Ces 5 lieux existent… mais presque personne ne peut y entrer",
+                  "description_tiktok": "5 lieux réels, protégés pour des raisons scientifiques, historiques ou naturelles. Le numéro 1 est incroyable. Visuels illustratifs.",
+                  "description_youtube_shorts": "Voici 5 endroits réels où l’accès est extrêmement limité : archives, grottes, îles protégées et laboratoire naturel. Visuels illustratifs.",
+                  "description_instagram_reels": "Des lieux réels, mais presque inaccessibles. Vous choisiriez lequel… de loin ? Visuels illustratifs.",
+                  "hashtags": "#Top5 #LieuxInterdits #FaitsInsolites #CultureGenerale #MysteresDuMonde #Histoire #Science #VoyageCurieux #ShortsFR #ReelsFrance",
+                  "commentaire_epingle": "Vous visiteriez lequel… si c’était autorisé ?",
+                  "mention": "Visuels illustratifs / certaines images peuvent être générées par IA.",
+                  "checklist": [
+                      "Aucun extrait TikTok, YouTube, Instagram, film, série, TV ou match.",
+                      "Aucune musique commerciale connue.",
+                      "Aucun logo central volontaire.",
+                      "Aucune personne privée identifiable volontaire.",
+                      "Visuels issus de Pexels/Pixabay ou fonds générés.",
+                      "Métadonnées sources conservées dans assets/metadata."
+                  ]
+              }
+
+              PUBLICATION_JSON.write_text(json.dumps(publication, ensure_ascii=False, indent=2), encoding="utf-8")
+              log("Done")
+
+          if __name__ == "__main__":
+              main()
+          PY
+
+      - name: Generate video
+        run: |
+          python generate_short.py
+
+      - name: Upload final video
+        uses: actions/upload-artifact@v4
+        with:
+          name: top5-lieux-interdits-video
+          path: |
+            output/top5_lieux_interdits.mp4
+            output/publication.json
+            assets/metadata/*.json
