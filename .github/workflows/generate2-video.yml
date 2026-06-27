@@ -1,0 +1,1500 @@
+name: Generate TikTok Short
+
+on:
+  workflow_dispatch:
+
+jobs:
+  generate-video:
+    runs-on: ubuntu-latest
+
+    env:
+      PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+      PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg espeak-ng fonts-dejavu-core
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests moviepy==1.0.3 pillow==9.5.0 numpy==1.26.4 imageio-ffmpeg
+
+      - name: Create automatic video generator
+        run: |
+          cat > generate_short.py <<'PY'
+          import os
+          import json
+          import math
+          import time
+          import random
+          import subprocess
+          from pathlib import Path
+
+          import requests
+          import numpy as np
+          from PIL import Image, ImageDraw, ImageFont
+
+          if not hasattr(Image, "ANTIALIAS"):
+              Image.ANTIALIAS = Image.Resampling.LANCZOS
+
+          from moviepy.editor import (
+              VideoFileClip,
+              ImageClip,
+              CompositeVideoClip,
+              concatenate_videoclips,
+              AudioFileClip,
+              AudioClip,
+              CompositeAudioClip,
+          )
+          from moviepy.audio.fx.all import audio_fadein, audio_fadeout, volumex
+
+          WIDTH = 1080
+          HEIGHT = 1920
+          FPS = 30
+
+          PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "").strip()
+          PIXABAY_API_KEY = os.getenv("PIXABAY_API_KEY", "").strip()
+
+          ROOT = Path(".").resolve()
+          ASSETS = ROOT / "assets"
+          VIDEOS = ASSETS / "videos"
+          META = ASSETS / "metadata"
+          OUTPUT = ROOT / "output"
+
+          for folder in [ASSETS, VIDEOS, META, OUTPUT]:
+              folder.mkdir(parents=True, exist_ok=True)
+
+          FINAL_MP4 = OUTPUT / "top5_lieux_interdits.mp4"
+          VOICE_TXT = OUTPUT / "voice_script.txt"
+          VOICE_WAV = OUTPUT / "voice.wav"
+          PUBLICATION_JSON = OUTPUT / "publication.json"
+
+          SCRIPT = """Ce sont des endroits réels… mais presque personne n’a le droit d’y entrer.
+
+          Voici le top 5 des lieux les plus protégés de la planète. Et le numéro un existe depuis seulement soixante ans.
+
+          Numéro cinq : les Archives apostoliques du Vatican. C’est ouvert surtout à des chercheurs qualifiés, avec des règles très strictes.
+
+          Numéro quatre : la réserve mondiale de graines au Svalbard. Dans une montagne arctique, plus d’un million trois cent quatre-vingt mille échantillons de graines dorment à moins dix-huit degrés.
+
+          Numéro trois : Lascaux, en France. La vraie grotte est fermée au public depuis 1963. Pourquoi ? Nos respirations, la lumière et l’humidité menaçaient les peintures préhistoriques.
+
+          Numéro deux : Queimada Grande, au Brésil. Cette île protégée abrite une vipère endémique : seules les autorités et certains chercheurs y accèdent.
+
+          Numéro un : Surtsey, en Islande. Une île née d’une éruption en 1963. Là-bas, même poser le pied peut fausser l’expérience scientifique. Les visites sont interdites pour observer comment la vie colonise une terre neuve.
+
+          Lequel vous donne envie de regarder… de très loin ?"""
+
+          SCENES = [
+              {
+                  "id": "01_hook",
+                  "duration": 2,
+                  "title": "ENDROITS\nINTERDITS",
+                  "subtitle": "Ce sont des endroits réels…\nmais presque personne ne peut entrer.",
+                  "keywords": ["locked door", "security door", "dark corridor", "remote island"],
+                  "color": (18, 18, 24),
+              },
+              {
+                  "id": "02_promesse",
+                  "duration": 3,
+                  "title": "TOP 5\nRÉELS",
+                  "subtitle": "Voici le top 5\ndes lieux les plus protégés.",
+                  "keywords": ["world map dark", "map animation", "global locations"],
+                  "color": (12, 22, 35),
+              },
+              {
+                  "id": "03_vatican",
+                  "duration": 12,
+                  "title": "#5 ARCHIVES\nDU VATICAN",
+                  "title2": "Chercheurs qualifiés\nseulement",
+                  "subtitle": "Ouvert surtout\nà des chercheurs qualifiés.",
+                  "keywords": ["old library", "archive shelves", "ancient books", "historical archive"],
+                  "color": (70, 46, 25),
+              },
+              {
+                  "id": "04_svalbard",
+                  "duration": 12,
+                  "title": "#4 COFFRE\nÀ GRAINES",
+                  "title2": "-18 °C\nsous l’Arctique",
+                  "subtitle": "Dans une montagne arctique,\ndes graines dorment à -18 degrés.",
+                  "keywords": ["arctic mountain", "snow mountain", "ice tunnel", "frozen vault"],
+                  "color": (20, 55, 84),
+              },
+              {
+                  "id": "05_lascaux",
+                  "duration": 12,
+                  "title": "#3 LASCAUX\nFERMÉE",
+                  "title2": "Depuis\n1963",
+                  "subtitle": "La vraie grotte est fermée\ndepuis 1963.",
+                  "keywords": ["cave", "cave painting", "prehistoric art", "rock art"],
+                  "color": (55, 34, 18),
+              },
+              {
+                  "id": "06_queimada",
+                  "duration": 12,
+                  "title": "#2 ÎLE AUX\nSERPENTS",
+                  "title2": "Accès\nultra limité",
+                  "subtitle": "Cette île protégée\nabrite une vipère endémique.",
+                  "keywords": ["tropical island drone", "remote island", "viper snake", "jungle island"],
+                  "color": (18, 65, 42),
+              },
+              {
+                  "id": "07_surtsey",
+                  "duration": 14,
+                  "title": "#1\nSURTSEY",
+                  "title2": "Île\nlaboratoire",
+                  "subtitle": "Même poser le pied\npeut fausser l’expérience.",
+                  "keywords": ["volcanic island", "black lava coast", "Iceland ocean", "volcanic rock"],
+                  "color": (20, 23, 27),
+              },
+              {
+                  "id": "08_question",
+                  "duration": 3,
+                  "title": "LEQUEL\nTU CHOISIS ?",
+                  "subtitle": "Lequel vous donne envie\nde regarder de très loin ?",
+                  "keywords": ["world map dark", "remote island", "mysterious place"],
+                  "color": (16, 16, 22),
+              },
+          ]
+
+          def log(message):
+              print(f"[SHORTS-FACTORY] {message}")
+
+          def download_file(url, path):
+              try:
+                  with requests.get(url, stream=True, timeout=60) as response:
+                      response.raise_for_status()
+                      with open(path, "wb") as file:
+                          for chunk in response.iter_content(chunk_size=1024 * 1024):
+                              if chunk:
+                                  file.write(chunk)
+                  return path.exists() and path.stat().st_size > 100000
+              except Exception as error:
+                  log(f"Download failed: {error}")
+                  return False
+
+          def search_pexels(query):
+              if not PEXELS_API_KEY:
+                  return None
+              try:
+                  response = requests.get(
+                      "https://api.pexels.com/videos/search",
+                      headers={"Authorization": PEXELS_API_KEY},
+                      params={
+                          "query": query,
+                          "orientation": "portrait",
+                          "per_page": 8,
+                          "min_duration": 3,
+                          "max_duration": 60,
+                      },
+                      timeout=30,
+                  )
+                  if response.status_code >= 400:
+                      log(f"Pexels error {response.status_code}: {response.text[:150]}")
+                      return None
+                  videos = response.json().get("videos", [])
+                  return videos[0] if videos else None
+              except Exception as error:
+                  log(f"Pexels search failed: {error}")
+                  return None
+
+          def best_pexels_url(video):
+              files = video.get("video_files", [])
+              if not files:
+                  return None
+
+              def score(file):
+                  width = file.get("width", 0) or 0
+                  height = file.get("height", 0) or 0
+                  vertical_bonus = 1000000 if height >= width else 0
+                  return vertical_bonus + width * height
+
+              files = sorted(files, key=score, reverse=True)
+              return files[0].get("link")
+
+          def search_pixabay(query):
+              if not PIXABAY_API_KEY:
+                  return None
+              try:
+                  response = requests.get(
+                      "https://pixabay.com/api/videos/",
+                      params={
+                          "key": PIXABAY_API_KEY,
+                          "q": query,
+                          "safesearch": "true",
+                          "per_page": 8,
+                      },
+                      timeout=30,
+                  )
+                  if response.status_code >= 400:
+                      log(f"Pixabay error {response.status_code}: {response.text[:150]}")
+                      return None
+                  hits = response.json().get("hits", [])
+                  return hits[0] if hits else None
+              except Exception as error:
+                  log(f"Pixabay search failed: {error}")
+                  return None
+
+          def best_pixabay_url(hit):
+              videos = hit.get("videos", {})
+              for quality in ["large", "medium", "small", "tiny"]:
+                  item = videos.get(quality)
+                  if item and item.get("url"):
+                      return item["url"]
+              return None
+
+          def get_scene_video(scene):
+              path = VIDEOS / f"{scene['id']}.mp4"
+              meta_path = META / f"{scene['id']}.json"
+
+              if path.exists() and path.stat().st_size > 100000:
+                  return path
+
+              for query in scene["keywords"]:
+                  log(f"Searching visual for {scene['id']}: {query}")
+
+                  pexels = search_pexels(query)
+                  if pexels:
+                      url = best_pexels_url(pexels)
+                      if url and download_file(url, path):
+                          meta_path.write_text(json.dumps({
+                              "source": "Pexels",
+                              "query": query,
+                              "id": pexels.get("id"),
+                              "url": pexels.get("url"),
+                          }, ensure_ascii=False, indent=2), encoding="utf-8")
+                          return path
+
+                  pixabay = search_pixabay(query)
+                  if pixabay:
+                      url = best_pixabay_url(pixabay)
+                      if url and download_file(url, path):
+                          meta_path.write_text(json.dumps({
+                              "source": "Pixabay",
+                              "query": query,
+                              "id": pixabay.get("id"),
+                              "pageURL": pixabay.get("pageURL"),
+                              "tags": pixabay.get("tags"),
+                              "user": pixabay.get("user"),
+                          }, ensure_ascii=False, indent=2), encoding="utf-8")
+                          return path
+
+              log(f"No visual found for {scene['id']}. Using generated background.")
+              return None
+
+          def generate_voice():
+              VOICE_TXT.write_text(SCRIPT, encoding="utf-8")
+              command = [
+                  "espeak-ng",
+                  "-v", "fr",
+                  "-s", "188",
+                  "-p", "45",
+                  "-a", "170",
+                  "-w", str(VOICE_WAV),
+                  "-f", str(VOICE_TXT),
+              ]
+              subprocess.run(command, check=True)
+              log("Voice generated with espeak-ng")
+
+          def font(size):
+              return ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", size)
+
+          def text_image(text, width, height, size, color=(255, 255, 255, 255), stroke=(0, 0, 0, 255), stroke_width=8):
+              image = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+              draw = ImageDraw.Draw(image)
+              current_font = font(size)
+              lines = text.split("\n")
+              spacing = int(size * 0.25)
+
+              line_sizes = []
+              total_height = 0
+
+              for line in lines:
+                  box = draw.textbbox((0, 0), line, font=current_font, stroke_width=stroke_width)
+                  line_width = box[2] - box[0]
+                  line_height = box[3] - box[1]
+                  line_sizes.append((line_width, line_height))
+                  total_height += line_height
+
+              total_height += spacing * (len(lines) - 1)
+              y = (height - total_height) // 2
+
+              for index, line in enumerate(lines):
+                  line_width, line_height = line_sizes[index]
+                  x = (width - line_width) // 2
+                  line_color = color
+                  if line.strip().startswith("#"):
+                      line_color = (255, 215, 0, 255)
+                  draw.text((x, y), line, font=current_font, fill=line_color, stroke_width=stroke_width, stroke_fill=stroke)
+                  y += line_height + spacing
+
+              return np.array(image)
+
+          def fallback_background(scene):
+              base = scene["color"]
+              image = Image.new("RGB", (WIDTH, HEIGHT), base)
+              draw = ImageDraw.Draw(image)
+
+              for y in range(HEIGHT):
+                  factor = y / HEIGHT
+                  r = int(base[0] * (0.75 + factor * 0.45))
+                  g = int(base[1] * (0.75 + factor * 0.45))
+                  b = int(base[2] * (0.75 + factor * 0.45))
+                  draw.line((0, y, WIDTH, y), fill=(r, g, b))
+
+              for _ in range(22):
+                  x = random.randint(-250, WIDTH)
+                  y = random.randint(-250, HEIGHT)
+                  radius = random.randint(120, 460)
+                  draw.ellipse((x, y, x + radius, y + radius), outline=(80, 80, 90), width=3)
+
+              path = OUTPUT / f"{scene['id']}_fallback.jpg"
+              image.save(path, quality=95)
+              return path
+
+          def crop_vertical(clip):
+              width, height = clip.size
+              target_ratio = WIDTH / HEIGHT
+
+              if width / height > target_ratio:
+                  new_width = int(height * target_ratio)
+                  x1 = int((width - new_width) / 2)
+                  clip = clip.crop(x1=x1, y1=0, width=new_width, height=height)
+              else:
+                  new_height = int(width / target_ratio)
+                  y1 = int(max(0, (height - new_height) / 2))
+                  clip = clip.crop(x1=0, y1=y1, width=width, height=min(height, new_height))
+
+              return clip.resize((WIDTH, HEIGHT))
+
+          def make_scene(scene, video_path):
+              duration = scene["duration"]
+
+              try:
+                  if video_path:
+                      base = VideoFileClip(str(video_path)).without_audio()
+                      if base.duration < duration:
+                          loops = math.ceil(duration / max(base.duration, 0.1))
+                          base = concatenate_videoclips([base] * loops)
+                      base = base.subclip(0, duration)
+                      base = crop_vertical(base)
+                  else:
+                      raise RuntimeError("No video path")
+              except Exception as error:
+                  log(f"Using fallback for {scene['id']}: {error}")
+                  base = ImageClip(str(fallback_background(scene))).set_duration(duration).resize((WIDTH, HEIGHT))
+
+              base = base.resize(lambda t: 1.02 + 0.045 * (t / max(duration, 0.1))).crop(
+                  x_center=WIDTH / 2,
+                  y_center=HEIGHT / 2,
+                  width=WIDTH,
+                  height=HEIGHT,
+              )
+
+              overlays = [base]
+
+              band = Image.new("RGBA", (WIDTH, 360), (0, 0, 0, 120))
+              overlays.append(ImageClip(np.array(band)).set_duration(duration).set_position(("center", HEIGHT - 470)))
+
+              title_size = 92
+              if "#1" in scene["title"]:
+                  title_size = 120
+              if "ENDROITS" in scene["title"]:
+                  title_size = 110
+
+              title_clip = ImageClip(
+                  text_image(scene["title"], WIDTH, 360, title_size, stroke_width=10)
+              ).set_duration(min(6, duration)).set_position(("center", 110))
+              overlays.append(title_clip)
+
+              if "title2" in scene:
+                  title2_clip = ImageClip(
+                      text_image(scene["title2"], WIDTH, 260, 72, stroke_width=8)
+                  ).set_start(6).set_duration(duration - 6).set_position(("center", 280))
+                  overlays.append(title2_clip)
+
+              subtitle_clip = ImageClip(
+                  text_image(scene["subtitle"], WIDTH - 70, 280, 56, stroke_width=8)
+              ).set_duration(duration).set_position(("center", HEIGHT - 420))
+              overlays.append(subtitle_clip)
+
+              return CompositeVideoClip(overlays, size=(WIDTH, HEIGHT)).set_duration(duration)
+
+          def make_music(duration):
+              def audio_function(t):
+                  t = np.array(t)
+                  bass = 0.018 * np.sin(2 * np.pi * 55 * t)
+                  pulse = 0.009 * np.sin(2 * np.pi * 110 * t) * (0.5 + 0.5 * np.sin(2 * np.pi * 1.2 * t))
+                  air = 0.003 * np.sin(2 * np.pi * 220 * t)
+                  value = bass + pulse + air
+                  return np.vstack([value, value]).T if value.ndim else [value, value]
+              return AudioClip(audio_function, duration=duration, fps=44100)
+
+          def hit(start, freq=90, duration=0.18, volume=0.13):
+              def audio_function(t):
+                  t = np.array(t)
+                  env = np.exp(-18 * t)
+                  value = volume * env * np.sin(2 * np.pi * freq * t)
+                  return np.vstack([value, value]).T if value.ndim else [value, value]
+              return AudioClip(audio_function, duration=duration, fps=44100).set_start(start)
+
+          def whoosh(start, duration=0.3, volume=0.045):
+              def audio_function(t):
+                  t = np.array(t)
+                  sweep = np.sin(2 * np.pi * (180 + 650 * t) * t)
+                  env = np.sin(np.pi * t / duration)
+                  value = volume * sweep * env
+                  return np.vstack([value, value]).T if value.ndim else [value, value]
+              return AudioClip(audio_function, duration=duration, fps=44100).set_start(start)
+
+          def main():
+              if not PEXELS_API_KEY:
+                  log("Warning: PEXELS_API_KEY is missing. The video will rely on Pixabay or generated backgrounds.")
+
+              log("Generating voice")
+              generate_voice()
+
+              log("Searching and downloading visuals")
+              paths = []
+              for scene in SCENES:
+                  paths.append(get_scene_video(scene))
+                  time.sleep(0.4)
+
+              log("Rendering scenes")
+              clips = [make_scene(scene, path) for scene, path in zip(SCENES, paths)]
+
+              final = concatenate_videoclips(clips, method="compose")
+              duration = final.duration
+              log(f"Video duration: {duration:.2f}s")
+
+              voice = AudioFileClip(str(VOICE_WAV)).fx(volumex, 1.0)
+              music = make_music(duration).fx(audio_fadein, 0.4).fx(audio_fadeout, 1.0).fx(volumex, 0.45)
+
+              sfx = [
+                  hit(0.00, freq=70, volume=0.20),
+                  whoosh(2.00),
+                  hit(5.00),
+                  hit(17.00),
+                  whoosh(29.00),
+                  hit(41.00),
+                  whoosh(52.70),
+                  hit(53.00, freq=70, volume=0.18),
+                  hit(67.00, freq=130, volume=0.10),
+              ]
+
+              audio = CompositeAudioClip([music, voice] + sfx).set_duration(duration)
+              final = final.set_audio(audio)
+
+              log("Exporting MP4")
+              final.write_videofile(
+                  str(FINAL_MP4),
+                  fps=FPS,
+                  codec="libx264",
+                  audio_codec="aac",
+                  bitrate="6500k",
+                  threads=4,
+                  preset="medium",
+              )
+
+              publication = {
+                  "titre": "Ces 5 lieux existent… mais presque personne ne peut y entrer",
+                  "description_tiktok": "5 lieux réels, protégés pour des raisons scientifiques, historiques ou naturelles. Le numéro 1 est incroyable. Visuels illustratifs.",
+                  "description_youtube_shorts": "Voici 5 endroits réels où l’accès est extrêmement limité : archives, grottes, îles protégées et laboratoire naturel. Visuels illustratifs.",
+                  "description_instagram_reels": "Des lieux réels, mais presque inaccessibles. Vous choisiriez lequel… de loin ? Visuels illustratifs.",
+                  "hashtags": "#Top5 #LieuxInterdits #FaitsInsolites #CultureGenerale #MysteresDuMonde #Histoire #Science #VoyageCurieux #ShortsFR #ReelsFrance",
+                  "commentaire_epingle": "Vous visiteriez lequel… si c’était autorisé ?",
+                  "mention": "Visuels illustratifs / certaines images peuvent être générées par IA.",
+                  "checklist": [
+                      "Aucun extrait TikTok, YouTube, Instagram, film, série, TV ou match.",
+                      "Aucune musique commerciale connue.",
+                      "Aucun logo central volontaire.",
+                      "Aucune personne privée identifiable volontaire.",
+                      "Visuels issus de Pexels, Pixabay ou fonds générés.",
+                      "Métadonnées sources conservées dans assets/metadata."
+                  ]
+              }
+
+              PUBLICATION_JSON.write_text(json.dumps(publication, ensure_ascii=False, indent=2), encoding="utf-8")
+              log("Done")
+
+          if __name__ == "__main__":
+              main()
+          PY
+
+      - name: Generate video
+        run: |
+          Texte collé.txt
+Document
+Créé moi ce montage video telechargeable : 
+Comme ca?
+Est-ce que ces limites poseront problème?
+Le plus simple est peut-être de renommer simplement le nom du fichier non?.github/workflows/generate-video.yml
+Effectivement nous n'avions pas fait pexel encore, je tente de générer la clé, voici ce qu'ils me demandent
+Encore raté malgré les 2 clés
+Réflexion durant 20s
+
+Les clés ne sont probablement plus le problème. Là, le workflow se lance bien, puis il échoue pendant l’étape generate-video.
+
+Le plus probable dans notre fichier actuel : la voix française fr-fr de espeak-ng n’existe pas sur le runner GitHub. Il faut remplacer fr-fr par fr.
+
+Correction rapide à faire
+
+Va dans ton fichier :
+
+.github/workflows/generate-video.yml
+
+Puis cherche cette ligne :
+
+"-v", "fr-fr",
+
+Remplace-la par :
+
+"-v", "fr",
+
+Ensuite clique sur Commit changes, puis retourne dans Actions → Run workflow.
+
+Pourquoi je pense que c’est ça
+
+Le workflow échoue en environ 45 secondes, ce qui correspond souvent au moment où il installe les dépendances puis tente de générer la voix. Les clés API invalides n’auraient normalement pas bloqué totalement, car le script peut utiliser des fonds générés si les vidéos ne sont pas trouvées.
+
+Si ça échoue encore
+
+Appuie sur le bloc rouge generate-video, puis sur l’étape rouge à l’intérieur. Il faut voir le message exact en bas du log. Envoie-moi une capture de la ligne d’erreur rouge ou des 10 dernières lignes, et je te donne la correction exacte.
+
+Avant de changer le fr, autant regarder le message d'erreur 
+Réflexion durant 7s
+
+Oui, tu as bien fait de regarder le message d’erreur.
+Le problème n’est pas la clé Pexels ni la voix française.
+
+L’erreur exacte est :
+
+AttributeError: module 'PIL.Image' has no attribute 'ANTIALIAS'
+
+Cela vient d’une incompatibilité entre MoviePy 1.0.3 et une version trop récente de Pillow.
+
+Correction à faire
+
+Dans ton fichier :
+
+.github/workflows/generate-video.yml
+
+Cherche cette ligne :
+
+pip install requests moviepy==1.0.3 pillow numpy imageio-ffmpeg
+
+Remplace-la par :
+
+pip install requests moviepy==1.0.3 pillow==9.5.0 numpy imageio-ffmpeg
+
+Donc le bloc doit devenir :
+
+- name: Install Python dependencies
+  run: |
+    python -m pip install --upgrade pip
+    pip install requests moviepy==1.0.3 pillow==9.5.0 numpy imageio-ffmpeg
+
+Ensuite :
+
+Clique sur Commit changes.
+Retourne dans Actions.
+Relance Run workflow.
+
+Ne change pas encore le fr-fr. L’erreur actuelle est clairement liée à Pillow, pas à la voix.
+
+Je n'arrive pas a modifier le texte
+Réflexion durant 10s
+
+Tu es au bon endroit. Sur mobile, GitHub cache souvent le bouton de modification.
+
+Sur ton écran, fais ceci :
+
+Appuie sur les trois points ... à droite du bloc de code, juste à côté de l’icône <>.
+Cherche une option du type Edit file ou Modifier le fichier.
+Si tu ne la vois pas, appuie sur les 3 points de ton navigateur en bas à droite, puis active Version ordinateur.
+Recharge la page.
+Le bouton crayon ✏️ Edit devrait apparaître en haut du fichier.
+
+Ensuite cherche cette ligne :
+
+pip install requests moviepy==1.0.3 pillow numpy imageio-ffmpeg
+
+Remplace-la par :
+
+pip install requests moviepy==1.0.3 pillow==9.5.0 numpy imageio-ffmpeg
+
+Puis descends tout en bas et clique sur :
+
+Commit changes
+
+Ensuite retourne dans :
+
+Actions → Generate TikTok Short → Run workflow
+
+Si tu veux aller encore plus vite : active directement Version ordinateur dans ton navigateur mobile. Sur GitHub mobile, c’est souvent indispensable pour modifier un fichier YAML proprement.
+
+Encore raté
+J'ai du mal a coller le texte ça decale le reste...
+Mais non, c'est la antialias qui pose problème : tu souhaitais ca : from PIL import Image, ImageDraw, ImageFont
+
+if not hasattr(Image, "ANTIALIAS"):
+    Image.ANTIALIAS = Image.Resampling.LANCZOS
+Réflexion durant 10s
+
+Oui, tu as raison. La correction que je voulais est bien celle-ci :
+
+from PIL import Image, ImageDraw, ImageFont
+
+if not hasattr(Image, "ANTIALIAS"):
+    Image.ANTIALIAS = Image.Resampling.LANCZOS
+
+from moviepy.editor import (
+
+Il faut la placer exactement entre :
+
+from PIL import Image, ImageDraw, ImageFont
+
+et :
+
+from moviepy.editor import (
+
+Sur ton écran, les traits rouges ne sont pas forcément graves : GitHub mobile comprend mal le Python parce qu’il est dans un fichier .yml.
+
+Le point important : les lignes doivent être alignées comme ça :
+
+          from PIL import Image, ImageDraw, ImageFont
+
+          if not hasattr(Image, "ANTIALIAS"):
+              Image.ANTIALIAS = Image.Resampling.LANCZOS
+
+          from moviepy.editor import (
+
+Dans ton fichier YAML, comme tout le code Python est à l’intérieur du bloc run: |, il faut garder les mêmes espaces au début que les autres lignes Python.
+
+Donc vérifie bien :
+
+if not hasattr... commence au même niveau que from PIL...
+Image.ANTIALIAS = ... est décalé de 4 espaces de plus que le if
+la ligne complète est bien :
+Image.ANTIALIAS = Image.Resampling.LANCZOS
+
+Pas seulement Image.Resampling.L....
+
+Ensuite fais Commit changes puis relance le workflow.
+
+Encore raté
+Réflexion durant 20s
+
+Tu as raison : l’erreur confirme que la correction n’est pas prise en compte. Le workflow utilise encore une version de Pillow où Image.ANTIALIAS n’existe plus.
+
+On va arrêter de modifier le code Python au milieu du fichier. La solution la plus fiable est de forcer l’installation d’une ancienne version de Pillow compatible avec MoviePy.
+
+Fais uniquement cette correction
+
+Dans generate-video.yml, cherche cette ligne :
+
+pip install requests moviepy==1.0.3 pillow numpy imageio-ffmpeg
+
+Remplace-la par :
+
+pip install requests moviepy==1.0.3 pillow==9.5.0 numpy imageio-ffmpeg
+
+Ensuite supprime le petit bloc que tu avais ajouté :
+
+if not hasattr(Image, "ANTIALIAS"):
+    Image.ANTIALIAS = Image.Resampling.LANCZOS
+
+Donc on revient à :
+
+from PIL import Image, ImageDraw, ImageFont
+
+from moviepy.editor import (
+
+Pourquoi : avec pillow==9.5.0, Image.ANTIALIAS existe encore, donc MoviePy ne plante plus.
+
+Après ça :
+
+Commit changes
+Va dans Actions
+Lance Run workflow
+
+Si après ça l’erreur ANTIALIAS revient encore, ça voudra dire que la ligne pip install n’a pas été modifiée dans le fichier réellement exécuté.
+
+Mais si rappel toi, on a deja eu un plantage avec 9.5.0 et pas l'ajout de antialias, regarde nos échanges précédents
+Réflexion durant 10s
+
+Tu as raison, je me suis contredit. On a déjà tenté pillow==9.5.0, et comme le runner GitHub est en Python 3.12, ce n’est pas la correction la plus fiable. L’erreur continue parce que MoviePy 1.0.3 appelle encore Image.ANTIALIAS.
+
+La vraie correction robuste est donc :
+
+forcer Python 3.11 + Pillow 9.5.0, au lieu de laisser GitHub utiliser Python 3.12.
+
+Correction à faire dans generate-video.yml
+
+Dans ton fichier, repère ce bloc :
+
+- name: Install system dependencies
+  run: |
+    sudo apt-get update
+    sudo apt-get install -y ffmpeg espeak-ng fonts-dejavu-core
+
+- name: Install Python dependencies
+  run: |
+    python -m pip install --upgrade pip
+    pip install requests moviepy==1.0.3 pillow==9.5.0 numpy imageio-ffmpeg
+
+Remplace-le par celui-ci :
+
+- name: Install system dependencies
+  run: |
+    sudo apt-get update
+    sudo apt-get install -y ffmpeg espeak-ng fonts-dejavu-core
+
+- name: Set up Python 3.11
+  uses: actions/setup-python@v5
+  with:
+    python-version: '3.11'
+
+- name: Install Python dependencies
+  run: |
+    python -m pip install --upgrade pip
+    pip install requests moviepy==1.0.3 pillow==9.5.0 numpy imageio-ffmpeg
+
+Ensuite, dans le code Python, garde simplement :
+
+from PIL import Image, ImageDraw, ImageFont
+
+from moviepy.editor import (
+
+Donc supprime le bloc ANTIALIAS ajouté manuellement si tu l’as encore.
+
+Pourquoi cette fois c’est la bonne correction
+
+Le log montre que GitHub exécute le script avec :
+
+python3.12
+
+Avec Python 3.12, l’environnement tire probablement une version récente de Pillow, et MoviePy 1.0.3 plante sur Image.ANTIALIAS.
+
+En forçant :
+
+python-version: '3.11'
+
+puis :
+
+pillow==9.5.0
+
+on revient à une combinaison compatible avec MoviePy 1.0.3.
+
+Après modification :
+
+Commit changes
+Actions
+Generate TikTok Short
+Run workflow
+
+Là, on devrait dépasser l’erreur ANTIALIAS.
+
+Ça devient trop lourd pour moi, le plus simple est que tu me donne le bon texte complet conforme au texte attendu et que j'efface tout et que je le colle non?
+Réflexion durant 21s
+
+Oui, exactement. Le plus simple maintenant est :
+
+Ouvre generate-video.yml
+Clique sur Edit
+Supprime tout
+Colle tout le texte ci-dessous
+Clique sur Commit changes
+Relance Actions → Generate TikTok Short → Run workflow
+
+Copie uniquement le contenu du bloc, sans ajouter autre chose.
+
+name: Generate TikTok Short
+
+on:
+  workflow_dispatch:
+
+jobs:
+  generate-video:
+    runs-on: ubuntu-latest
+
+    env:
+      PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+      PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg espeak-ng fonts-dejavu-core
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests moviepy==1.0.3 pillow==9.5.0 numpy==1.26.4 imageio-ffmpeg
+
+      - name: Create automatic video generator
+        run: |
+          cat > generate_short.py <<'PY'
+          import os
+          import json
+          import math
+          import time
+          import random
+          import subprocess
+          from pathlib import Path
+
+          import requests
+          import numpy as np
+          from PIL import Image, ImageDraw, ImageFont
+
+          if not hasattr(Image, "ANTIALIAS"):
+              Image.ANTIALIAS = Image.Resampling.LANCZOS
+
+          from moviepy.editor import (
+              VideoFileClip,
+              ImageClip,
+              CompositeVideoClip,
+              concatenate_videoclips,
+              AudioFileClip,
+              AudioClip,
+              CompositeAudioClip,
+          )
+          from moviepy.audio.fx.all import audio_fadein, audio_fadeout, volumex
+
+          WIDTH = 1080
+          HEIGHT = 1920
+          FPS = 30
+
+          PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "").strip()
+          PIXABAY_API_KEY = os.getenv("PIXABAY_API_KEY", "").strip()
+
+          ROOT = Path(".").resolve()
+          ASSETS = ROOT / "assets"
+          VIDEOS = ASSETS / "videos"
+          META = ASSETS / "metadata"
+          OUTPUT = ROOT / "output"
+
+          for folder in [ASSETS, VIDEOS, META, OUTPUT]:
+              folder.mkdir(parents=True, exist_ok=True)
+
+          FINAL_MP4 = OUTPUT / "top5_lieux_interdits.mp4"
+          VOICE_TXT = OUTPUT / "voice_script.txt"
+          VOICE_WAV = OUTPUT / "voice.wav"
+          PUBLICATION_JSON = OUTPUT / "publication.json"
+
+          SCRIPT = """Ce sont des endroits réels… mais presque personne n’a le droit d’y entrer.
+
+          Voici le top 5 des lieux les plus protégés de la planète. Et le numéro un existe depuis seulement soixante ans.
+
+          Numéro cinq : les Archives apostoliques du Vatican. C’est ouvert surtout à des chercheurs qualifiés, avec des règles très strictes.
+
+          Numéro quatre : la réserve mondiale de graines au Svalbard. Dans une montagne arctique, plus d’un million trois cent quatre-vingt mille échantillons de graines dorment à moins dix-huit degrés.
+
+          Numéro trois : Lascaux, en France. La vraie grotte est fermée au public depuis 1963. Pourquoi ? Nos respirations, la lumière et l’humidité menaçaient les peintures préhistoriques.
+
+          Numéro deux : Queimada Grande, au Brésil. Cette île protégée abrite une vipère endémique : seules les autorités et certains chercheurs y accèdent.
+
+          Numéro un : Surtsey, en Islande. Une île née d’une éruption en 1963. Là-bas, même poser le pied peut fausser l’expérience scientifique. Les visites sont interdites pour observer comment la vie colonise une terre neuve.
+
+          Lequel vous donne envie de regarder… de très loin ?"""
+
+          SCENES = [
+              {
+                  "id": "01_hook",
+                  "duration": 2,
+                  "title": "ENDROITS\nINTERDITS",
+                  "subtitle": "Ce sont des endroits réels…\nmais presque personne ne peut entrer.",
+                  "keywords": ["locked door", "security door", "dark corridor", "remote island"],
+                  "color": (18, 18, 24),
+              },
+              {
+                  "id": "02_promesse",
+                  "duration": 3,
+                  "title": "TOP 5\nRÉELS",
+                  "subtitle": "Voici le top 5\ndes lieux les plus protégés.",
+                  "keywords": ["world map dark", "map animation", "global locations"],
+                  "color": (12, 22, 35),
+              },
+              {
+                  "id": "03_vatican",
+                  "duration": 12,
+                  "title": "#5 ARCHIVES\nDU VATICAN",
+                  "title2": "Chercheurs qualifiés\nseulement",
+                  "subtitle": "Ouvert surtout\nà des chercheurs qualifiés.",
+                  "keywords": ["old library", "archive shelves", "ancient books", "historical archive"],
+                  "color": (70, 46, 25),
+              },
+              {
+                  "id": "04_svalbard",
+                  "duration": 12,
+                  "title": "#4 COFFRE\nÀ GRAINES",
+                  "title2": "-18 °C\nsous l’Arctique",
+                  "subtitle": "Dans une montagne arctique,\ndes graines dorment à -18 degrés.",
+                  "keywords": ["arctic mountain", "snow mountain", "ice tunnel", "frozen vault"],
+                  "color": (20, 55, 84),
+              },
+              {
+                  "id": "05_lascaux",
+                  "duration": 12,
+                  "title": "#3 LASCAUX\nFERMÉE",
+                  "title2": "Depuis\n1963",
+                  "subtitle": "La vraie grotte est fermée\ndepuis 1963.",
+                  "keywords": ["cave", "cave painting", "prehistoric art", "rock art"],
+                  "color": (55, 34, 18),
+              },
+              {
+                  "id": "06_queimada",
+                  "duration": 12,
+                  "title": "#2 ÎLE AUX\nSERPENTS",
+                  "title2": "Accès\nultra limité",
+                  "subtitle": "Cette île protégée\nabrite une vipère endémique.",
+                  "keywords": ["tropical island drone", "remote island", "viper snake", "jungle island"],
+                  "color": (18, 65, 42),
+              },
+              {
+                  "id": "07_surtsey",
+                  "duration": 14,
+                  "title": "#1\nSURTSEY",
+                  "title2": "Île\nlaboratoire",
+                  "subtitle": "Même poser le pied\npeut fausser l’expérience.",
+                  "keywords": ["volcanic island", "black lava coast", "Iceland ocean", "volcanic rock"],
+                  "color": (20, 23, 27),
+              },
+              {
+                  "id": "08_question",
+                  "duration": 3,
+                  "title": "LEQUEL\nTU CHOISIS ?",
+                  "subtitle": "Lequel vous donne envie\nde regarder de très loin ?",
+                  "keywords": ["world map dark", "remote island", "mysterious place"],
+                  "color": (16, 16, 22),
+              },
+          ]
+
+          def log(message):
+              print(f"[SHORTS-FACTORY] {message}")
+
+          def download_file(url, path):
+              try:
+                  with requests.get(url, stream=True, timeout=60) as response:
+                      response.raise_for_status()
+                      with open(path, "wb") as file:
+                          for chunk in response.iter_content(chunk_size=1024 * 1024):
+                              if chunk:
+                                  file.write(chunk)
+                  return path.exists() and path.stat().st_size > 100000
+              except Exception as error:
+                  log(f"Download failed: {error}")
+                  return False
+
+          def search_pexels(query):
+              if not PEXELS_API_KEY:
+                  return None
+              try:
+                  response = requests.get(
+                      "https://api.pexels.com/videos/search",
+                      headers={"Authorization": PEXELS_API_KEY},
+                      params={
+                          "query": query,
+                          "orientation": "portrait",
+                          "per_page": 8,
+                          "min_duration": 3,
+                          "max_duration": 60,
+                      },
+                      timeout=30,
+                  )
+                  if response.status_code >= 400:
+                      log(f"Pexels error {response.status_code}: {response.text[:150]}")
+                      return None
+                  videos = response.json().get("videos", [])
+                  return videos[0] if videos else None
+              except Exception as error:
+                  log(f"Pexels search failed: {error}")
+                  return None
+
+          def best_pexels_url(video):
+              files = video.get("video_files", [])
+              if not files:
+                  return None
+
+              def score(file):
+                  width = file.get("width", 0) or 0
+                  height = file.get("height", 0) or 0
+                  vertical_bonus = 1000000 if height >= width else 0
+                  return vertical_bonus + width * height
+
+              files = sorted(files, key=score, reverse=True)
+              return files[0].get("link")
+
+          def search_pixabay(query):
+              if not PIXABAY_API_KEY:
+                  return None
+              try:
+                  response = requests.get(
+                      "https://pixabay.com/api/videos/",
+                      params={
+                          "key": PIXABAY_API_KEY,
+                          "q": query,
+                          "safesearch": "true",
+                          "per_page": 8,
+                      },
+                      timeout=30,
+                  )
+                  if response.status_code >= 400:
+                      log(f"Pixabay error {response.status_code}: {response.text[:150]}")
+                      return None
+                  hits = response.json().get("hits", [])
+                  return hits[0] if hits else None
+              except Exception as error:
+                  log(f"Pixabay search failed: {error}")
+                  return None
+
+          def best_pixabay_url(hit):
+              videos = hit.get("videos", {})
+              for quality in ["large", "medium", "small", "tiny"]:
+                  item = videos.get(quality)
+                  if item and item.get("url"):
+                      return item["url"]
+              return None
+
+          def get_scene_video(scene):
+              path = VIDEOS / f"{scene['id']}.mp4"
+              meta_path = META / f"{scene['id']}.json"
+
+              if path.exists() and path.stat().st_size > 100000:
+                  return path
+
+              for query in scene["keywords"]:
+                  log(f"Searching visual for {scene['id']}: {query}")
+
+                  pexels = search_pexels(query)
+                  if pexels:
+                      url = best_pexels_url(pexels)
+                      if url and download_file(url, path):
+                          meta_path.write_text(json.dumps({
+                              "source": "Pexels",
+                              "query": query,
+                              "id": pexels.get("id"),
+                              "url": pexels.get("url"),
+                          }, ensure_ascii=False, indent=2), encoding="utf-8")
+                          return path
+
+                  pixabay = search_pixabay(query)
+                  if pixabay:
+                      url = best_pixabay_url(pixabay)
+                      if url and download_file(url, path):
+                          meta_path.write_text(json.dumps({
+                              "source": "Pixabay",
+                              "query": query,
+                              "id": pixabay.get("id"),
+                              "pageURL": pixabay.get("pageURL"),
+                              "tags": pixabay.get("tags"),
+                              "user": pixabay.get("user"),
+                          }, ensure_ascii=False, indent=2), encoding="utf-8")
+                          return path
+
+              log(f"No visual found for {scene['id']}. Using generated background.")
+              return None
+
+          def generate_voice():
+              VOICE_TXT.write_text(SCRIPT, encoding="utf-8")
+              command = [
+                  "espeak-ng",
+                  "-v", "fr",
+                  "-s", "188",
+                  "-p", "45",
+                  "-a", "170",
+                  "-w", str(VOICE_WAV),
+                  "-f", str(VOICE_TXT),
+              ]
+              subprocess.run(command, check=True)
+              log("Voice generated with espeak-ng")
+
+          def font(size):
+              return ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", size)
+
+          def text_image(text, width, height, size, color=(255, 255, 255, 255), stroke=(0, 0, 0, 255), stroke_width=8):
+              image = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+              draw = ImageDraw.Draw(image)
+              current_font = font(size)
+              lines = text.split("\n")
+              spacing = int(size * 0.25)
+
+              line_sizes = []
+              total_height = 0
+
+              for line in lines:
+                  box = draw.textbbox((0, 0), line, font=current_font, stroke_width=stroke_width)
+                  line_width = box[2] - box[0]
+                  line_height = box[3] - box[1]
+                  line_sizes.append((line_width, line_height))
+                  total_height += line_height
+
+              total_height += spacing * (len(lines) - 1)
+              y = (height - total_height) // 2
+
+              for index, line in enumerate(lines):
+                  line_width, line_height = line_sizes[index]
+                  x = (width - line_width) // 2
+                  line_color = color
+                  if line.strip().startswith("#"):
+                      line_color = (255, 215, 0, 255)
+                  draw.text((x, y), line, font=current_font, fill=line_color, stroke_width=stroke_width, stroke_fill=stroke)
+                  y += line_height + spacing
+
+              return np.array(image)
+
+          def fallback_background(scene):
+              base = scene["color"]
+              image = Image.new("RGB", (WIDTH, HEIGHT), base)
+              draw = ImageDraw.Draw(image)
+
+              for y in range(HEIGHT):
+                  factor = y / HEIGHT
+                  r = int(base[0] * (0.75 + factor * 0.45))
+                  g = int(base[1] * (0.75 + factor * 0.45))
+                  b = int(base[2] * (0.75 + factor * 0.45))
+                  draw.line((0, y, WIDTH, y), fill=(r, g, b))
+
+              for _ in range(22):
+                  x = random.randint(-250, WIDTH)
+                  y = random.randint(-250, HEIGHT)
+                  radius = random.randint(120, 460)
+                  draw.ellipse((x, y, x + radius, y + radius), outline=(80, 80, 90), width=3)
+
+              path = OUTPUT / f"{scene['id']}_fallback.jpg"
+              image.save(path, quality=95)
+              return path
+
+          def crop_vertical(clip):
+              width, height = clip.size
+              target_ratio = WIDTH / HEIGHT
+
+              if width / height > target_ratio:
+                  new_width = int(height * target_ratio)
+                  x1 = int((width - new_width) / 2)
+                  clip = clip.crop(x1=x1, y1=0, width=new_width, height=height)
+              else:
+                  new_height = int(width / target_ratio)
+                  y1 = int(max(0, (height - new_height) / 2))
+                  clip = clip.crop(x1=0, y1=y1, width=width, height=min(height, new_height))
+
+              return clip.resize((WIDTH, HEIGHT))
+
+          def make_scene(scene, video_path):
+              duration = scene["duration"]
+
+              try:
+                  if video_path:
+                      base = VideoFileClip(str(video_path)).without_audio()
+                      if base.duration < duration:
+                          loops = math.ceil(duration / max(base.duration, 0.1))
+                          base = concatenate_videoclips([base] * loops)
+                      base = base.subclip(0, duration)
+                      base = crop_vertical(base)
+                  else:
+                      raise RuntimeError("No video path")
+              except Exception as error:
+                  log(f"Using fallback for {scene['id']}: {error}")
+                  base = ImageClip(str(fallback_background(scene))).set_duration(duration).resize((WIDTH, HEIGHT))
+
+              base = base.resize(lambda t: 1.02 + 0.045 * (t / max(duration, 0.1))).crop(
+                  x_center=WIDTH / 2,
+                  y_center=HEIGHT / 2,
+                  width=WIDTH,
+                  height=HEIGHT,
+              )
+
+              overlays = [base]
+
+              band = Image.new("RGBA", (WIDTH, 360), (0, 0, 0, 120))
+              overlays.append(ImageClip(np.array(band)).set_duration(duration).set_position(("center", HEIGHT - 470)))
+
+              title_size = 92
+              if "#1" in scene["title"]:
+                  title_size = 120
+              if "ENDROITS" in scene["title"]:
+                  title_size = 110
+
+              title_clip = ImageClip(
+                  text_image(scene["title"], WIDTH, 360, title_size, stroke_width=10)
+              ).set_duration(min(6, duration)).set_position(("center", 110))
+              overlays.append(title_clip)
+
+              if "title2" in scene:
+                  title2_clip = ImageClip(
+                      text_image(scene["title2"], WIDTH, 260, 72, stroke_width=8)
+                  ).set_start(6).set_duration(duration - 6).set_position(("center", 280))
+                  overlays.append(title2_clip)
+
+              subtitle_clip = ImageClip(
+                  text_image(scene["subtitle"], WIDTH - 70, 280, 56, stroke_width=8)
+              ).set_duration(duration).set_position(("center", HEIGHT - 420))
+              overlays.append(subtitle_clip)
+
+              return CompositeVideoClip(overlays, size=(WIDTH, HEIGHT)).set_duration(duration)
+
+          def make_music(duration):
+              def audio_function(t):
+                  t = np.array(t)
+                  bass = 0.018 * np.sin(2 * np.pi * 55 * t)
+                  pulse = 0.009 * np.sin(2 * np.pi * 110 * t) * (0.5 + 0.5 * np.sin(2 * np.pi * 1.2 * t))
+                  air = 0.003 * np.sin(2 * np.pi * 220 * t)
+                  value = bass + pulse + air
+                  return np.vstack([value, value]).T if value.ndim else [value, value]
+              return AudioClip(audio_function, duration=duration, fps=44100)
+
+          def hit(start, freq=90, duration=0.18, volume=0.13):
+              def audio_function(t):
+                  t = np.array(t)
+                  env = np.exp(-18 * t)
+                  value = volume * env * np.sin(2 * np.pi * freq * t)
+                  return np.vstack([value, value]).T if value.ndim else [value, value]
+              return AudioClip(audio_function, duration=duration, fps=44100).set_start(start)
+
+          def whoosh(start, duration=0.3, volume=0.045):
+              def audio_function(t):
+                  t = np.array(t)
+                  sweep = np.sin(2 * np.pi * (180 + 650 * t) * t)
+                  env = np.sin(np.pi * t / duration)
+                  value = volume * sweep * env
+                  return np.vstack([value, value]).T if value.ndim else [value, value]
+              return AudioClip(audio_function, duration=duration, fps=44100).set_start(start)
+
+          def main():
+              if not PEXELS_API_KEY:
+                  log("Warning: PEXELS_API_KEY is missing. The video will rely on Pixabay or generated backgrounds.")
+
+              log("Generating voice")
+              generate_voice()
+
+              log("Searching and downloading visuals")
+              paths = []
+              for scene in SCENES:
+                  paths.append(get_scene_video(scene))
+                  time.sleep(0.4)
+
+              log("Rendering scenes")
+              clips = [make_scene(scene, path) for scene, path in zip(SCENES, paths)]
+
+              final = concatenate_videoclips(clips, method="compose")
+              duration = final.duration
+              log(f"Video duration: {duration:.2f}s")
+
+              voice = AudioFileClip(str(VOICE_WAV)).fx(volumex, 1.0)
+              music = make_music(duration).fx(audio_fadein, 0.4).fx(audio_fadeout, 1.0).fx(volumex, 0.45)
+
+              sfx = [
+                  hit(0.00, freq=70, volume=0.20),
+                  whoosh(2.00),
+                  hit(5.00),
+                  hit(17.00),
+                  whoosh(29.00),
+                  hit(41.00),
+                  whoosh(52.70),
+                  hit(53.00, freq=70, volume=0.18),
+                  hit(67.00, freq=130, volume=0.10),
+              ]
+
+              audio = CompositeAudioClip([music, voice] + sfx).set_duration(duration)
+              final = final.set_audio(audio)
+
+              log("Exporting MP4")
+              final.write_videofile(
+                  str(FINAL_MP4),
+                  fps=FPS,
+                  codec="libx264",
+                  audio_codec="aac",
+                  bitrate="6500k",
+                  threads=4,
+                  preset="medium",
+              )
+
+              publication = {
+                  "titre": "Ces 5 lieux existent… mais presque personne ne peut y entrer",
+                  "description_tiktok": "5 lieux réels, protégés pour des raisons scientifiques, historiques ou naturelles. Le numéro 1 est incroyable. Visuels illustratifs.",
+                  "description_youtube_shorts": "Voici 5 endroits réels où l’accès est extrêmement limité : archives, grottes, îles protégées et laboratoire naturel. Visuels illustratifs.",
+                  "description_instagram_reels": "Des lieux réels, mais presque inaccessibles. Vous choisiriez lequel… de loin ? Visuels illustratifs.",
+                  "hashtags": "#Top5 #LieuxInterdits #FaitsInsolites #CultureGenerale #MysteresDuMonde #Histoire #Science #VoyageCurieux #ShortsFR #ReelsFrance",
+                  "commentaire_epingle": "Vous visiteriez lequel… si c’était autorisé ?",
+                  "mention": "Visuels illustratifs / certaines images peuvent être générées par IA.",
+                  "checklist": [
+                      "Aucun extrait TikTok, YouTube, Instagram, film, série, TV ou match.",
+                      "Aucune musique commerciale connue.",
+                      "Aucun logo central volontaire.",
+                      "Aucune personne privée identifiable volontaire.",
+                      "Visuels issus de Pexels, Pixabay ou fonds générés.",
+                      "Métadonnées sources conservées dans assets/metadata."
+                  ]
+              }
+
+              PUBLICATION_JSON.write_text(json.dumps(publication, ensure_ascii=False, indent=2), encoding="utf-8")
+              log("Done")
+
+          if __name__ == "__main__":
+              main()
+          PY
+
+      - name: Generate video
+        run: |
+          python generate_short.py
+
+      - name: Upload final video
+        uses: actions/upload-artifact@v4
+        with:
+          name: top5-lieux-interdits-video
+          path: |
+            output/top5_lieux_interdits.mp4
+            output/publication.json
+            assets/metadata/*.json
+
+Après avoir collé et validé, relance le workflow. Cette version contient les deux sécurités : Python 3.11 + Pillow 9.5.0 + correction ANTIALIAS.
+
+Es tu certain d'avoir utilisé python 3.11 comme tu le disait,  ça semble encore echouer et je vous python 3.12 dans le resultat
+Réflexion durant 9s
+
+Oui, tu as raison. Sur ta capture, le log montre clairement :
+
+python3.12
+
+Donc non, le workflow exécuté n’utilise pas correctement Python 3.11, ou alors GitHub relance encore une ancienne version du fichier. Et surtout : l’erreur vient toujours de MoviePy + Pillow, donc on perd du temps avec cette dépendance.
+
+La meilleure décision maintenant : on supprime MoviePy complètement.
+
+On passe à une version plus robuste avec :
+
+Python + FFmpeg uniquement
+
+Comme ça :
+
+plus d’erreur Image.ANTIALIAS ;
+plus de problème MoviePy ;
+plus besoin de Python 3.11 absolument ;
+GitHub Actions utilisera FFmpeg pour monter la vidéo ;
+Pillow servira seulement à créer les textes/images.
+Ce que je te propose
+
+Efface tout ton fichier generate-video.yml et colle une nouvelle version sans MoviePy.
+
+Avant que je te la donne, confirmation importante :
+Le rendu sera un peu plus simple que la version MoviePy, mais il générera enfin un MP4, ce qui est prioritaire maintenant.
+
+Il fera :
+
+recherche Pexels/Pixabay ;
+téléchargement des clips ;
+création de scènes verticales ;
+textes écran intégrés ;
+sous-titres visuels simples ;
+voix off espeak-ng ;
+musique/SFX basiques ;
+concaténation FFmpeg ;
+export MP4 ;
+artifact téléchargeable.
+
+Donc oui : tu as bien repéré le problème. On arrête de corriger MoviePy. On remplace par une version FFmpeg fiable.
+
+N'a tu pas simplement la compréhension de comment résoudre ce bug sans être bridé, il doit bien y avoir un code qui fonctionne sans se priver de moviepy non?
+Réflexion durant 32s
+
+Oui, il existe bien une solution propre sans abandonner MoviePy. Tu as raison de pousser là-dessus.
+
+Le bug est simple : MoviePy 1.0.3 utilise encore Image.ANTIALIAS, alors que Pillow l’a supprimé dans ses versions récentes. Pillow indique que ANTIALIAS a été remplacé par LANCZOS / Resampling.LANCZOS.
+
+Le vrai problème chez nous : le patch que je t’ai fait ajouter dans le gros script n’est visiblement pas exécuté au bon moment, ou pas dans l’environnement réellement lancé. La preuve : le log affiche encore python3.12 et MoviePy plante toujours avant de voir Image.ANTIALIAS.
+
+La bonne correction MoviePy
+
+On va créer un fichier spécial Python nommé :
+
+sitecustomize.py
+
+Python charge automatiquement ce fichier au démarrage s’il est dans le chemin d’exécution. Donc le patch sera appliqué avant que MoviePy ne s’exécute.
+
+Ce que tu dois modifier
+
+Dans ton workflow, cherche cette partie :
+
+- name: Generate video
+  run: |
+    python generate_short.py
+
+Remplace-la par ceci :
+
+- name: Generate video
+  run: |
+    cat > sitecustomize.py <<'PY'
+    from PIL import Image
+    if not hasattr(Image, "ANTIALIAS"):
+        Image.ANTIALIAS = Image.Resampling.LANCZOS
+    PY
+
+    python -c "from PIL import Image; print('ANTIALIAS disponible:', hasattr(Image, 'ANTIALIAS'))"
+    PYTHONPATH="$PWD:$PYTHONPATH" python generate_short.py
+
+Ensuite fais Commit changes et relance le workflow.
+
+Pourquoi cette correction est meilleure
+
+Elle ne dépend pas du fait que GitHub utilise Python 3.11 ou 3.12. Elle force Python à recréer Image.ANTIALIAS avant que MoviePy charge son module resize.py.
+
+GitHub explique que actions/setup-python sert bien à installer une version spécifique de Python et l’ajouter au PATH, mais ici, au lieu de nous battre avec l’environnement exact, on corrige directement la compatibilité entre Pillow et MoviePy.
+
+Donc oui : on garde MoviePy, mais on applique le patch globalement avec sitecustomize.py.
+
+Comment et ou créer le fichier python?
+
+Tu n’as pas besoin de créer un fichier Python à la main dans GitHub.
+
+Le workflow va le créer automatiquement pendant l’exécution. On va juste modifier une petite partie de generate-video.yml.
+
+Où modifier
+
+Ouvre ce fichier :
+
+.github/workflows/generate-video.yml
+
+Puis cherche tout en bas ce bloc :
+
+- name: Generate video
+  run: |
+    python generate_short.py
+Remplace uniquement ce bloc par celui-ci
+- name: Generate video
+  run: |
+    cat > sitecustomize.py <<'PY'
+    from PIL import Image
+    if not hasattr(Image, "ANTIALIAS"):
+        Image.ANTIALIAS = Image.Resampling.LANCZOS
+    PY
+
+    python -c "from PIL import Image; print('ANTIALIAS disponible:', hasattr(Image, 'ANTIALIAS'))"
+    PYTHONPATH="$PWD:$PYTHONPATH" python generate_short.py
+
+      - name: Upload final video
+        uses: actions/upload-artifact@v4
+        with:
+          name: top5-lieux-interdits-video
+          path: |
+            output/top5_lieux_interdits.mp4
+            output/publication.json
+            assets/metadata/*.json
