@@ -15,6 +15,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
       - name: Install system dependencies
         run: |
           sudo apt-get update
@@ -23,7 +28,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install requests moviepy==1.0.3 pillow==9.5.0 numpy imageio-ffmpeg
+          pip install requests moviepy==1.0.3 pillow==9.5.0 numpy==1.26.4 imageio-ffmpeg
 
       - name: Create automatic video generator
         run: |
@@ -41,7 +46,7 @@ jobs:
           from PIL import Image, ImageDraw, ImageFont
 
           if not hasattr(Image, "ANTIALIAS"):
-              Image.ANTIALIAS = Image.Resampling.LANCZOSrom PIL import Image, ImageDraw, ImageFont
+              Image.ANTIALIAS = Image.Resampling.LANCZOS
 
           from moviepy.editor import (
               VideoFileClip,
@@ -58,8 +63,8 @@ jobs:
           HEIGHT = 1920
           FPS = 30
 
-          PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "")
-          PIXABAY_API_KEY = os.getenv("PIXABAY_API_KEY", "")
+          PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "").strip()
+          PIXABAY_API_KEY = os.getenv("PIXABAY_API_KEY", "").strip()
 
           ROOT = Path(".").resolve()
           ASSETS = ROOT / "assets"
@@ -67,8 +72,8 @@ jobs:
           META = ASSETS / "metadata"
           OUTPUT = ROOT / "output"
 
-          for d in [ASSETS, VIDEOS, META, OUTPUT]:
-              d.mkdir(parents=True, exist_ok=True)
+          for folder in [ASSETS, VIDEOS, META, OUTPUT]:
+              folder.mkdir(parents=True, exist_ok=True)
 
           FINAL_MP4 = OUTPUT / "top5_lieux_interdits.mp4"
           VOICE_TXT = OUTPUT / "voice_script.txt"
@@ -163,27 +168,27 @@ jobs:
               },
           ]
 
-          def log(msg):
-              print(f"[SHORTS-FACTORY] {msg}")
+          def log(message):
+              print(f"[SHORTS-FACTORY] {message}")
 
           def download_file(url, path):
               try:
-                  with requests.get(url, stream=True, timeout=60) as r:
-                      r.raise_for_status()
-                      with open(path, "wb") as f:
-                          for chunk in r.iter_content(chunk_size=1024 * 1024):
+                  with requests.get(url, stream=True, timeout=60) as response:
+                      response.raise_for_status()
+                      with open(path, "wb") as file:
+                          for chunk in response.iter_content(chunk_size=1024 * 1024):
                               if chunk:
-                                  f.write(chunk)
+                                  file.write(chunk)
                   return path.exists() and path.stat().st_size > 100000
-              except Exception as e:
-                  log(f"Download failed: {e}")
+              except Exception as error:
+                  log(f"Download failed: {error}")
                   return False
 
           def search_pexels(query):
               if not PEXELS_API_KEY:
                   return None
               try:
-                  r = requests.get(
+                  response = requests.get(
                       "https://api.pexels.com/videos/search",
                       headers={"Authorization": PEXELS_API_KEY},
                       params={
@@ -195,13 +200,13 @@ jobs:
                       },
                       timeout=30,
                   )
-                  if r.status_code >= 400:
-                      log(f"Pexels error {r.status_code}: {r.text[:120]}")
+                  if response.status_code >= 400:
+                      log(f"Pexels error {response.status_code}: {response.text[:150]}")
                       return None
-                  videos = r.json().get("videos", [])
+                  videos = response.json().get("videos", [])
                   return videos[0] if videos else None
-              except Exception as e:
-                  log(f"Pexels search failed: {e}")
+              except Exception as error:
+                  log(f"Pexels search failed: {error}")
                   return None
 
           def best_pexels_url(video):
@@ -209,11 +214,11 @@ jobs:
               if not files:
                   return None
 
-              def score(f):
-                  w = f.get("width", 0) or 0
-                  h = f.get("height", 0) or 0
-                  vertical = 1000000 if h >= w else 0
-                  return vertical + w * h
+              def score(file):
+                  width = file.get("width", 0) or 0
+                  height = file.get("height", 0) or 0
+                  vertical_bonus = 1000000 if height >= width else 0
+                  return vertical_bonus + width * height
 
               files = sorted(files, key=score, reverse=True)
               return files[0].get("link")
@@ -222,7 +227,7 @@ jobs:
               if not PIXABAY_API_KEY:
                   return None
               try:
-                  r = requests.get(
+                  response = requests.get(
                       "https://pixabay.com/api/videos/",
                       params={
                           "key": PIXABAY_API_KEY,
@@ -232,20 +237,21 @@ jobs:
                       },
                       timeout=30,
                   )
-                  if r.status_code >= 400:
-                      log(f"Pixabay error {r.status_code}: {r.text[:120]}")
+                  if response.status_code >= 400:
+                      log(f"Pixabay error {response.status_code}: {response.text[:150]}")
                       return None
-                  hits = r.json().get("hits", [])
+                  hits = response.json().get("hits", [])
                   return hits[0] if hits else None
-              except Exception as e:
-                  log(f"Pixabay search failed: {e}")
+              except Exception as error:
+                  log(f"Pixabay search failed: {error}")
                   return None
 
           def best_pixabay_url(hit):
               videos = hit.get("videos", {})
-              for q in ["large", "medium", "small", "tiny"]:
-                  if q in videos and videos[q].get("url"):
-                      return videos[q]["url"]
+              for quality in ["large", "medium", "small", "tiny"]:
+                  item = videos.get(quality)
+                  if item and item.get("url"):
+                      return item["url"]
               return None
 
           def get_scene_video(scene):
@@ -289,52 +295,56 @@ jobs:
 
           def generate_voice():
               VOICE_TXT.write_text(SCRIPT, encoding="utf-8")
-              cmd = [
+              command = [
                   "espeak-ng",
-                  "-v", "fr-fr",
-                  "-s", "178",
+                  "-v", "fr",
+                  "-s", "188",
                   "-p", "45",
-                  "-a", "160",
+                  "-a", "170",
                   "-w", str(VOICE_WAV),
                   "-f", str(VOICE_TXT),
               ]
-              subprocess.run(cmd, check=True)
+              subprocess.run(command, check=True)
               log("Voice generated with espeak-ng")
 
           def font(size):
               return ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", size)
 
-          def text_image(text, w, h, size, color=(255, 255, 255, 255), stroke=(0, 0, 0, 255), sw=8):
-              img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-              draw = ImageDraw.Draw(img)
-              f = font(size)
+          def text_image(text, width, height, size, color=(255, 255, 255, 255), stroke=(0, 0, 0, 255), stroke_width=8):
+              image = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+              draw = ImageDraw.Draw(image)
+              current_font = font(size)
               lines = text.split("\n")
               spacing = int(size * 0.25)
-              heights = []
-              widths = []
+
+              line_sizes = []
+              total_height = 0
 
               for line in lines:
-                  box = draw.textbbox((0, 0), line, font=f, stroke_width=sw)
-                  widths.append(box[2] - box[0])
-                  heights.append(box[3] - box[1])
+                  box = draw.textbbox((0, 0), line, font=current_font, stroke_width=stroke_width)
+                  line_width = box[2] - box[0]
+                  line_height = box[3] - box[1]
+                  line_sizes.append((line_width, line_height))
+                  total_height += line_height
 
-              total_h = sum(heights) + spacing * (len(lines) - 1)
-              y = (h - total_h) // 2
+              total_height += spacing * (len(lines) - 1)
+              y = (height - total_height) // 2
 
-              for i, line in enumerate(lines):
-                  x = (w - widths[i]) // 2
+              for index, line in enumerate(lines):
+                  line_width, line_height = line_sizes[index]
+                  x = (width - line_width) // 2
                   line_color = color
                   if line.strip().startswith("#"):
                       line_color = (255, 215, 0, 255)
-                  draw.text((x, y), line, font=f, fill=line_color, stroke_width=sw, stroke_fill=stroke)
-                  y += heights[i] + spacing
+                  draw.text((x, y), line, font=current_font, fill=line_color, stroke_width=stroke_width, stroke_fill=stroke)
+                  y += line_height + spacing
 
-              return np.array(img)
+              return np.array(image)
 
           def fallback_background(scene):
               base = scene["color"]
-              img = Image.new("RGB", (WIDTH, HEIGHT), base)
-              draw = ImageDraw.Draw(img)
+              image = Image.new("RGB", (WIDTH, HEIGHT), base)
+              draw = ImageDraw.Draw(image)
 
               for y in range(HEIGHT):
                   factor = y / HEIGHT
@@ -350,21 +360,21 @@ jobs:
                   draw.ellipse((x, y, x + radius, y + radius), outline=(80, 80, 90), width=3)
 
               path = OUTPUT / f"{scene['id']}_fallback.jpg"
-              img.save(path, quality=95)
+              image.save(path, quality=95)
               return path
 
           def crop_vertical(clip):
-              w, h = clip.size
-              target = WIDTH / HEIGHT
+              width, height = clip.size
+              target_ratio = WIDTH / HEIGHT
 
-              if w / h > target:
-                  new_w = int(h * target)
-                  x1 = int((w - new_w) / 2)
-                  clip = clip.crop(x1=x1, y1=0, width=new_w, height=h)
+              if width / height > target_ratio:
+                  new_width = int(height * target_ratio)
+                  x1 = int((width - new_width) / 2)
+                  clip = clip.crop(x1=x1, y1=0, width=new_width, height=height)
               else:
-                  new_h = int(w / target)
-                  y1 = int(max(0, (h - new_h) / 2))
-                  clip = clip.crop(x1=0, y1=y1, width=w, height=min(h, new_h))
+                  new_height = int(width / target_ratio)
+                  y1 = int(max(0, (height - new_height) / 2))
+                  clip = clip.crop(x1=0, y1=y1, width=width, height=min(height, new_height))
 
               return clip.resize((WIDTH, HEIGHT))
 
@@ -381,8 +391,8 @@ jobs:
                       base = crop_vertical(base)
                   else:
                       raise RuntimeError("No video path")
-              except Exception as e:
-                  log(f"Using fallback for {scene['id']}: {e}")
+              except Exception as error:
+                  log(f"Using fallback for {scene['id']}: {error}")
                   base = ImageClip(str(fallback_background(scene))).set_duration(duration).resize((WIDTH, HEIGHT))
 
               base = base.resize(lambda t: 1.02 + 0.045 * (t / max(duration, 0.1))).crop(
@@ -403,48 +413,54 @@ jobs:
               if "ENDROITS" in scene["title"]:
                   title_size = 110
 
-              title = ImageClip(text_image(scene["title"], WIDTH, 360, title_size, sw=10)).set_duration(min(6, duration)).set_position(("center", 110))
-              overlays.append(title)
+              title_clip = ImageClip(
+                  text_image(scene["title"], WIDTH, 360, title_size, stroke_width=10)
+              ).set_duration(min(6, duration)).set_position(("center", 110))
+              overlays.append(title_clip)
 
               if "title2" in scene:
-                  t2 = ImageClip(text_image(scene["title2"], WIDTH, 260, 72, sw=8)).set_start(6).set_duration(duration - 6).set_position(("center", 280))
-                  overlays.append(t2)
+                  title2_clip = ImageClip(
+                      text_image(scene["title2"], WIDTH, 260, 72, stroke_width=8)
+                  ).set_start(6).set_duration(duration - 6).set_position(("center", 280))
+                  overlays.append(title2_clip)
 
-              sub = ImageClip(text_image(scene["subtitle"], WIDTH - 70, 280, 56, sw=8)).set_duration(duration).set_position(("center", HEIGHT - 420))
-              overlays.append(sub)
+              subtitle_clip = ImageClip(
+                  text_image(scene["subtitle"], WIDTH - 70, 280, 56, stroke_width=8)
+              ).set_duration(duration).set_position(("center", HEIGHT - 420))
+              overlays.append(subtitle_clip)
 
               return CompositeVideoClip(overlays, size=(WIDTH, HEIGHT)).set_duration(duration)
 
           def make_music(duration):
-              def fn(t):
+              def audio_function(t):
                   t = np.array(t)
                   bass = 0.018 * np.sin(2 * np.pi * 55 * t)
                   pulse = 0.009 * np.sin(2 * np.pi * 110 * t) * (0.5 + 0.5 * np.sin(2 * np.pi * 1.2 * t))
                   air = 0.003 * np.sin(2 * np.pi * 220 * t)
-                  val = bass + pulse + air
-                  return np.vstack([val, val]).T if val.ndim else [val, val]
-              return AudioClip(fn, duration=duration, fps=44100)
+                  value = bass + pulse + air
+                  return np.vstack([value, value]).T if value.ndim else [value, value]
+              return AudioClip(audio_function, duration=duration, fps=44100)
 
           def hit(start, freq=90, duration=0.18, volume=0.13):
-              def fn(t):
+              def audio_function(t):
                   t = np.array(t)
                   env = np.exp(-18 * t)
-                  val = volume * env * np.sin(2 * np.pi * freq * t)
-                  return np.vstack([val, val]).T if val.ndim else [val, val]
-              return AudioClip(fn, duration=duration, fps=44100).set_start(start)
+                  value = volume * env * np.sin(2 * np.pi * freq * t)
+                  return np.vstack([value, value]).T if value.ndim else [value, value]
+              return AudioClip(audio_function, duration=duration, fps=44100).set_start(start)
 
           def whoosh(start, duration=0.3, volume=0.045):
-              def fn(t):
+              def audio_function(t):
                   t = np.array(t)
                   sweep = np.sin(2 * np.pi * (180 + 650 * t) * t)
                   env = np.sin(np.pi * t / duration)
-                  val = volume * sweep * env
-                  return np.vstack([val, val]).T if val.ndim else [val, val]
-              return AudioClip(fn, duration=duration, fps=44100).set_start(start)
+                  value = volume * sweep * env
+                  return np.vstack([value, value]).T if value.ndim else [value, value]
+              return AudioClip(audio_function, duration=duration, fps=44100).set_start(start)
 
           def main():
               if not PEXELS_API_KEY:
-                  raise RuntimeError("PEXELS_API_KEY is missing in GitHub Secrets")
+                  log("Warning: PEXELS_API_KEY is missing. The video will rely on Pixabay or generated backgrounds.")
 
               log("Generating voice")
               generate_voice()
@@ -462,9 +478,7 @@ jobs:
               duration = final.duration
               log(f"Video duration: {duration:.2f}s")
 
-              voice = AudioFileClip(str(VOICE_WAV))
-              voice = voice.fx(volumex, 1.0)
-
+              voice = AudioFileClip(str(VOICE_WAV)).fx(volumex, 1.0)
               music = make_music(duration).fx(audio_fadein, 0.4).fx(audio_fadeout, 1.0).fx(volumex, 0.45)
 
               sfx = [
@@ -506,7 +520,7 @@ jobs:
                       "Aucune musique commerciale connue.",
                       "Aucun logo central volontaire.",
                       "Aucune personne privée identifiable volontaire.",
-                      "Visuels issus de Pexels/Pixabay ou fonds générés.",
+                      "Visuels issus de Pexels, Pixabay ou fonds générés.",
                       "Métadonnées sources conservées dans assets/metadata."
                   ]
               }
