@@ -40,6 +40,9 @@ jobs:
           import numpy as np
           from PIL import Image, ImageDraw, ImageFont
 
+          if not hasattr(Image, "ANTIALIAS"):
+              Image.ANTIALIAS = Image.Resampling.LANCZOSrom PIL import Image, ImageDraw, ImageFont
+
           from moviepy.editor import (
               VideoFileClip,
               ImageClip,
