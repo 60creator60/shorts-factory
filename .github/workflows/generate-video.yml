@@ -51,6 +51,7 @@ jobs:
               "getattr(getattr(Image, 'Resampling', Image), 'LANCZOS')"
           )
           path.write_text(text)
+
           print("MoviePy patched:", path)
           PY
 
@@ -67,10 +68,12 @@ jobs:
 
           import requests
           import numpy as np
-          from PIL import Image, ImageDraw, ImageFont
+          from PIL import Image, ImageDraw, ImageFont, ImageOps
+
+          RESAMPLE_LANCZOS = getattr(getattr(Image, "Resampling", Image), "LANCZOS")
 
           if not hasattr(Image, "ANTIALIAS"):
-              Image.ANTIALIAS = getattr(getattr(Image, "Resampling", Image), "LANCZOS")
+              Image.ANTIALIAS = RESAMPLE_LANCZOS
 
           from moviepy.editor import (
               VideoFileClip,
@@ -94,14 +97,18 @@ jobs:
           ASSETS = ROOT / "assets"
           VIDEOS = ASSETS / "videos"
           META = ASSETS / "metadata"
+          BRANDING = ASSETS / "branding"
           OUTPUT = ROOT / "output"
           VOICES = OUTPUT / "voices"
 
-          for folder in [ASSETS, VIDEOS, META, OUTPUT, VOICES]:
+          for folder in [ASSETS, VIDEOS, META, BRANDING, OUTPUT, VOICES]:
               folder.mkdir(parents=True, exist_ok=True)
 
           FINAL_MP4 = OUTPUT / "top5_lieux_interdits.mp4"
           PUBLICATION_JSON = OUTPUT / "publication.json"
+          PROFILE_PNG = BRANDING / "profile.png"
+          SUBSCRIBE_OUTRO_DURATION = 1.15
+
           PIPER_MODEL = ROOT / "piper_voice" / "fr_FR-siwis-medium.onnx"
           PIPER_CONFIG = ROOT / "piper_voice" / "fr_FR-siwis-medium.onnx.json"
 
@@ -117,10 +124,10 @@ jobs:
               },
               {
                   "id": "02_promesse",
-                  "min_duration": 5.5,
+                  "min_duration": 4.8,
                   "title": "TOP 5\nRÉELS",
-                  "subtitle": "Le numéro un\nest le plus surprenant.",
-                  "voice_text": "Voici le top cinq des lieux les plus protégés de la planète. Le numéro un est une île née en 1963.",
+                  "subtitle": "Accès interdit\nou ultra limité.",
+                  "voice_text": "Voici cinq lieux réels où l’accès est interdit, ultra limité, ou réservé à quelques personnes seulement.",
                   "keywords": ["world map dark", "map animation", "global locations"],
                   "color": (12, 22, 35),
               },
@@ -160,7 +167,7 @@ jobs:
                   "title": "#2 ÎLE AUX\nSERPENTS",
                   "title2": "Accès\nultra limité",
                   "subtitle": "Une île protégée\nau large du Brésil.",
-                  "voice_text": "Numéro deux : Queimada Grande, au Brésil. Cette île protégée abrite une vipère endémique. Seules les autorités et certains chercheurs peuvent y accéder.",
+                  "voice_text": "Numéro deux : Queimada Grande, au Brésil. Là, on change de niveau : cette île protégée abrite une vipère endémique. Seules les autorités et certains chercheurs peuvent y accéder.",
                   "keywords": ["tropical island drone", "remote island", "viper snake", "jungle island"],
                   "color": (18, 65, 42),
               },
@@ -430,6 +437,139 @@ jobs:
               image.save(path, quality=95)
               return path
 
+          def ensure_profile_image():
+              if PROFILE_PNG.exists() and PROFILE_PNG.stat().st_size > 1000:
+                  return PROFILE_PNG
+
+              fallback = OUTPUT / "default_profile.png"
+              size = 900
+
+              image = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+              draw = ImageDraw.Draw(image)
+
+              draw.ellipse(
+                  (30, 30, size - 30, size - 30),
+                  fill=(0, 0, 0, 255),
+                  outline=(255, 45, 85, 255),
+                  width=18
+              )
+
+              text = "MC"
+              current_font = font(320)
+              box = draw.textbbox((0, 0), text, font=current_font)
+              text_w = box[2] - box[0]
+              text_h = box[3] - box[1]
+              x = (size - text_w) // 2
+              y = (size - text_h) // 2 - 20
+
+              draw.text((x, y), text, font=current_font, fill=(255, 255, 255, 255))
+              image.save(fallback)
+              return fallback
+
+          def make_circle_avatar(size=430):
+              profile_path = ensure_profile_image()
+              img = Image.open(profile_path).convert("RGBA")
+              img = ImageOps.fit(
+                  img,
+                  (size, size),
+                  method=RESAMPLE_LANCZOS,
+                  centering=(0.5, 0.5)
+              )
+
+              mask = Image.new("L", (size, size), 0)
+              mask_draw = ImageDraw.Draw(mask)
+              mask_draw.ellipse((0, 0, size - 1, size - 1), fill=255)
+
+              avatar = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+              avatar.paste(img, (0, 0), mask)
+
+              canvas = Image.new("RGBA", (size + 34, size + 34), (0, 0, 0, 0))
+              canvas_draw = ImageDraw.Draw(canvas)
+
+              canvas_draw.ellipse(
+                  (4, 4, size + 30, size + 30),
+                  fill=(0, 0, 0, 180)
+              )
+
+              canvas.paste(avatar, (17, 17), avatar)
+
+              canvas_draw.ellipse(
+                  (8, 8, size + 26, size + 26),
+                  outline=(255, 45, 85, 255),
+                  width=10
+              )
+
+              return np.array(canvas)
+
+          def make_check_badge(size=120):
+              image = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+              draw = ImageDraw.Draw(image)
+
+              draw.ellipse((4, 4, size - 4, size - 4), fill=(255, 45, 85, 255))
+              current_font = font(int(size * 0.52))
+              text = "✓"
+              box = draw.textbbox((0, 0), text, font=current_font)
+              text_w = box[2] - box[0]
+              text_h = box[3] - box[1]
+              x = (size - text_w) // 2
+              y = (size - text_h) // 2 - 6
+
+              draw.text((x, y), text, font=current_font, fill=(255, 255, 255, 255))
+
+              return np.array(image)
+
+          def make_subscribe_box():
+              width = 620
+              height = 150
+              image = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+              draw = ImageDraw.Draw(image)
+
+              draw.rectangle((0, 0, width, height), fill=(0, 0, 0, 235))
+              current_font = font(88)
+              text = "Abonne-toi !"
+              box = draw.textbbox((0, 0), text, font=current_font)
+              text_w = box[2] - box[0]
+              text_h = box[3] - box[1]
+              x = (width - text_w) // 2
+              y = (height - text_h) // 2 - 8
+
+              draw.text((x, y), text, font=current_font, fill=(255, 255, 255, 255))
+
+              return np.array(image)
+
+          def make_subscribe_outro(last_clip, duration=SUBSCRIBE_OUTRO_DURATION):
+              frame = last_clip.get_frame(max(0, last_clip.duration - 0.05))
+              bg = ImageClip(frame).set_duration(duration).resize((WIDTH, HEIGHT))
+
+              shade = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 70))
+              shade_clip = ImageClip(np.array(shade)).set_duration(duration)
+
+              avatar_clip = (
+                  ImageClip(make_circle_avatar(430))
+                  .set_duration(duration)
+                  .set_position(("center", 700))
+                  .resize(lambda t: 0.88 + 0.12 * min(1, t / 0.16))
+              )
+
+              badge_clip = (
+                  ImageClip(make_check_badge(120))
+                  .set_duration(duration)
+                  .set_position((WIDTH // 2 - 15, 1030))
+                  .resize(lambda t: 0.75 + 0.25 * min(1, t / 0.12))
+              )
+
+              subscribe_clip = (
+                  ImageClip(make_subscribe_box())
+                  .set_duration(duration)
+                  .set_position(("center", 1195))
+                  .resize(lambda t: 0.96 + 0.04 * min(1, t / 0.16))
+              )
+
+              return CompositeVideoClip(
+                  [bg, shade_clip, avatar_clip, badge_clip, subscribe_clip],
+                  size=(WIDTH, HEIGHT)
+              ).set_duration(duration)
+
           def crop_vertical(clip):
               width, height = clip.size
               target_ratio = WIDTH / HEIGHT
@@ -575,6 +715,18 @@ jobs:
 
               return AudioClip(audio_function, duration=duration, fps=44100).set_start(start)
 
+          def ding(start, duration=0.22, volume=0.16):
+              def audio_function(t):
+                  t = np.array(t)
+                  env = np.exp(-14 * t)
+                  value = volume * env * (
+                      0.75 * np.sin(2 * np.pi * 880 * t) +
+                      0.25 * np.sin(2 * np.pi * 1320 * t)
+                  )
+                  return np.vstack([value, value]).T if value.ndim else [value, value]
+
+              return AudioClip(audio_function, duration=duration, fps=44100).set_start(start)
+
           def main():
               log("Generating Piper voices scene by scene")
 
@@ -592,8 +744,8 @@ jobs:
 
                   log(f"{scene['id']} voice: {voice_duration:.2f}s | scene: {scene['duration']:.2f}s")
 
-              total_duration = sum(scene["duration"] for scene in SCENES)
-              log(f"Estimated final duration: {total_duration:.2f}s")
+              total_duration = sum(scene["duration"] for scene in SCENES) + SUBSCRIBE_OUTRO_DURATION
+              log(f"Estimated final duration with outro: {total_duration:.2f}s")
 
               log("Searching and downloading visuals")
               paths = []
@@ -608,6 +760,13 @@ jobs:
                   make_scene(scene, path)
                   for scene, path in zip(SCENES, paths)
               ]
+
+              subscribe_outro = make_subscribe_outro(
+                  clips[-1],
+                  duration=SUBSCRIBE_OUTRO_DURATION
+              )
+
+              clips.append(subscribe_outro)
 
               final = concatenate_videoclips(clips, method="compose")
               duration = final.duration
@@ -627,6 +786,8 @@ jobs:
                   )
                   cursor += scene["duration"]
 
+              outro_start = cursor
+
               music = (
                   make_music(duration)
                   .fx(audio_fadein, 0.4)
@@ -644,6 +805,7 @@ jobs:
                   whoosh(scene_starts[6] - 0.25),
                   hit(scene_starts[6], freq=70, volume=0.16),
                   hit(scene_starts[7], freq=130, volume=0.08),
+                  ding(outro_start + 0.08, volume=0.16),
               ]
 
               audio = CompositeAudioClip([music] + voice_tracks + sfx).set_duration(duration)
@@ -676,6 +838,7 @@ jobs:
                       "Aucune personne privée identifiable volontaire.",
                       "Voix générée avec Piper TTS français.",
                       "Audio généré scène par scène pour synchroniser voix et visuels.",
+                      "Outro abonnement automatique avec logo, coche et son ding.",
                       "Visuels issus de Pexels, Pixabay ou fonds générés.",
                       "Métadonnées sources conservées dans assets/metadata."
                   ]
@@ -707,7 +870,7 @@ jobs:
       - name: Upload final video
         uses: actions/upload-artifact@v4
         with:
-          name: top5-lieux-interdits-video-v2-audio
+          name: top5-lieux-interdits-video-v3-outro
           path: |
             output/top5_lieux_interdits.mp4
             output/publication.json
