@@ -23,13 +23,20 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg espeak-ng fonts-dejavu-core
+          sudo apt-get install -y ffmpeg curl fonts-dejavu-core
 
       - name: Install Python dependencies
         run: |
           python --version
           python -m pip install --upgrade pip
-          python -m pip install requests moviepy==1.0.3 pillow==9.5.0 numpy==1.26.4 imageio-ffmpeg
+          python -m pip install requests moviepy==1.0.3 pillow==9.5.0 numpy==1.26.4 imageio-ffmpeg piper-tts
+
+      - name: Download French Piper voice
+        run: |
+          mkdir -p piper_voice
+          curl -L "https://huggingface.co/rhasspy/piper-voices/resolve/main/fr/fr_FR/siwis/medium/fr_FR-siwis-medium.onnx" -o piper_voice/fr_FR-siwis-medium.onnx
+          curl -L "https://huggingface.co/rhasspy/piper-voices/resolve/main/fr/fr_FR/siwis/medium/fr_FR-siwis-medium.onnx.json" -o piper_voice/fr_FR-siwis-medium.onnx.json
+          ls -lh piper_voice
 
       - name: Patch MoviePy Pillow compatibility
         run: |
@@ -44,7 +51,6 @@ jobs:
               "getattr(getattr(Image, 'Resampling', Image), 'LANCZOS')"
           )
           path.write_text(text)
-
           print("MoviePy patched:", path)
           PY
 
@@ -89,98 +95,91 @@ jobs:
           VIDEOS = ASSETS / "videos"
           META = ASSETS / "metadata"
           OUTPUT = ROOT / "output"
+          VOICES = OUTPUT / "voices"
 
-          for folder in [ASSETS, VIDEOS, META, OUTPUT]:
+          for folder in [ASSETS, VIDEOS, META, OUTPUT, VOICES]:
               folder.mkdir(parents=True, exist_ok=True)
 
           FINAL_MP4 = OUTPUT / "top5_lieux_interdits.mp4"
-          VOICE_TXT = OUTPUT / "voice_script.txt"
-          VOICE_WAV = OUTPUT / "voice.wav"
           PUBLICATION_JSON = OUTPUT / "publication.json"
-
-          SCRIPT = """Ce sont des endroits réels… mais presque personne n’a le droit d’y entrer.
-
-          Voici le top 5 des lieux les plus protégés de la planète. Et le numéro un existe depuis seulement soixante ans.
-
-          Numéro cinq : les Archives apostoliques du Vatican. C’est ouvert surtout à des chercheurs qualifiés, avec des règles très strictes.
-
-          Numéro quatre : la réserve mondiale de graines au Svalbard. Dans une montagne arctique, plus d’un million trois cent quatre-vingt mille échantillons de graines dorment à moins dix-huit degrés.
-
-          Numéro trois : Lascaux, en France. La vraie grotte est fermée au public depuis 1963. Pourquoi ? Nos respirations, la lumière et l’humidité menaçaient les peintures préhistoriques.
-
-          Numéro deux : Queimada Grande, au Brésil. Cette île protégée abrite une vipère endémique : seules les autorités et certains chercheurs y accèdent.
-
-          Numéro un : Surtsey, en Islande. Une île née d’une éruption en 1963. Là-bas, même poser le pied peut fausser l’expérience scientifique. Les visites sont interdites pour observer comment la vie colonise une terre neuve.
-
-          Lequel vous donne envie de regarder… de très loin ?"""
+          PIPER_MODEL = ROOT / "piper_voice" / "fr_FR-siwis-medium.onnx"
+          PIPER_CONFIG = ROOT / "piper_voice" / "fr_FR-siwis-medium.onnx.json"
 
           SCENES = [
               {
                   "id": "01_hook",
-                  "duration": 2,
+                  "min_duration": 3.8,
                   "title": "ENDROITS\nINTERDITS",
-                  "subtitle": "Ce sont des endroits réels…\nmais presque personne ne peut entrer.",
+                  "subtitle": "Des lieux réels…\npresque impossibles d’accès.",
+                  "voice_text": "Ces endroits sont réels… mais presque personne n’a le droit d’y entrer.",
                   "keywords": ["locked door", "security door", "dark corridor", "remote island"],
                   "color": (18, 18, 24),
               },
               {
                   "id": "02_promesse",
-                  "duration": 3,
+                  "min_duration": 5.5,
                   "title": "TOP 5\nRÉELS",
-                  "subtitle": "Voici le top 5\ndes lieux les plus protégés.",
+                  "subtitle": "Le numéro un\nest le plus surprenant.",
+                  "voice_text": "Voici le top cinq des lieux les plus protégés de la planète. Le numéro un est une île née en 1963.",
                   "keywords": ["world map dark", "map animation", "global locations"],
                   "color": (12, 22, 35),
               },
               {
                   "id": "03_vatican",
-                  "duration": 12,
+                  "min_duration": 8.5,
                   "title": "#5 ARCHIVES\nDU VATICAN",
                   "title2": "Chercheurs qualifiés\nseulement",
-                  "subtitle": "Ouvert surtout\nà des chercheurs qualifiés.",
+                  "subtitle": "Accès très encadré\npour les chercheurs.",
+                  "voice_text": "Numéro cinq : les Archives apostoliques du Vatican. L’accès est surtout réservé à des chercheurs qualifiés, avec des règles très strictes.",
                   "keywords": ["old library", "archive shelves", "ancient books", "historical archive"],
                   "color": (70, 46, 25),
               },
               {
                   "id": "04_svalbard",
-                  "duration": 12,
+                  "min_duration": 10.0,
                   "title": "#4 COFFRE\nÀ GRAINES",
                   "title2": "-18 °C\nsous l’Arctique",
-                  "subtitle": "Dans une montagne arctique,\ndes graines dorment à -18 degrés.",
+                  "subtitle": "Des graines conservées\nau froid extrême.",
+                  "voice_text": "Numéro quatre : le Svalbard Global Seed Vault. Dans une montagne arctique, plus d’un million d’échantillons de graines dorment à moins dix-huit degrés.",
                   "keywords": ["arctic mountain", "snow mountain", "ice tunnel", "frozen vault"],
                   "color": (20, 55, 84),
               },
               {
                   "id": "05_lascaux",
-                  "duration": 12,
+                  "min_duration": 11.0,
                   "title": "#3 LASCAUX\nFERMÉE",
                   "title2": "Depuis\n1963",
-                  "subtitle": "La vraie grotte est fermée\ndepuis 1963.",
+                  "subtitle": "La vraie grotte\nn’accueille plus le public.",
+                  "voice_text": "Numéro trois : Lascaux, en France. La vraie grotte est fermée au public depuis 1963, car l’humidité, la lumière et nos respirations menaçaient les peintures.",
                   "keywords": ["cave", "cave painting", "prehistoric art", "rock art"],
                   "color": (55, 34, 18),
               },
               {
                   "id": "06_queimada",
-                  "duration": 12,
+                  "min_duration": 10.5,
                   "title": "#2 ÎLE AUX\nSERPENTS",
                   "title2": "Accès\nultra limité",
-                  "subtitle": "Cette île protégée\nabrite une vipère endémique.",
+                  "subtitle": "Une île protégée\nau large du Brésil.",
+                  "voice_text": "Numéro deux : Queimada Grande, au Brésil. Cette île protégée abrite une vipère endémique. Seules les autorités et certains chercheurs peuvent y accéder.",
                   "keywords": ["tropical island drone", "remote island", "viper snake", "jungle island"],
                   "color": (18, 65, 42),
               },
               {
                   "id": "07_surtsey",
-                  "duration": 14,
+                  "min_duration": 14.0,
                   "title": "#1\nSURTSEY",
                   "title2": "Île\nlaboratoire",
                   "subtitle": "Même poser le pied\npeut fausser l’expérience.",
+                  "voice_text": "Numéro un : Surtsey, en Islande. Cette île est née d’une éruption en 1963. Même poser le pied dessus peut fausser l’expérience scientifique : observer comment la vie colonise une terre neuve.",
                   "keywords": ["volcanic island", "black lava coast", "Iceland ocean", "volcanic rock"],
                   "color": (20, 23, 27),
               },
               {
                   "id": "08_question",
-                  "duration": 3,
+                  "min_duration": 3.8,
                   "title": "LEQUEL\nTU CHOISIS ?",
-                  "subtitle": "Lequel vous donne envie\nde regarder de très loin ?",
+                  "subtitle": "À regarder…\nde très loin.",
+                  "voice_text": "Lequel vous donne envie de regarder… de très loin ?",
                   "keywords": ["world map dark", "remote island", "mysterious place"],
                   "color": (16, 16, 22),
               },
@@ -321,21 +320,29 @@ jobs:
               log(f"No visual found for {scene['id']}. Using generated background.")
               return None
 
-          def generate_voice():
-              VOICE_TXT.write_text(SCRIPT, encoding="utf-8")
+          def generate_scene_voice(scene):
+              output_path = VOICES / f"{scene['id']}.wav"
+
+              if output_path.exists() and output_path.stat().st_size > 10000:
+                  return output_path
 
               command = [
-                  "espeak-ng",
-                  "-v", "fr",
-                  "-s", "188",
-                  "-p", "45",
-                  "-a", "170",
-                  "-w", str(VOICE_WAV),
-                  "-f", str(VOICE_TXT),
+                  "piper",
+                  "--model", str(PIPER_MODEL),
+                  "--config", str(PIPER_CONFIG),
+                  "--output_file", str(output_path),
+                  "--length_scale", "1.05",
+                  "--sentence_silence", "0.22",
               ]
 
-              subprocess.run(command, check=True)
-              log("Voice generated with espeak-ng")
+              subprocess.run(
+                  command,
+                  input=scene["voice_text"],
+                  text=True,
+                  check=True
+              )
+
+              return output_path
 
           def font(size):
               return ImageFont.truetype(
@@ -510,9 +517,9 @@ jobs:
                   title2_clip = ImageClip(
                       text_image(scene["title2"], WIDTH, 260, 72, stroke_width=8)
                   ).set_start(
-                      6
+                      min(5.2, duration * 0.48)
                   ).set_duration(
-                      duration - 6
+                      max(0.5, duration - min(5.2, duration * 0.48))
                   ).set_position(
                       ("center", 280)
                   )
@@ -537,19 +544,19 @@ jobs:
           def make_music(duration):
               def audio_function(t):
                   t = np.array(t)
-                  bass = 0.018 * np.sin(2 * np.pi * 55 * t)
+                  bass = 0.016 * np.sin(2 * np.pi * 55 * t)
                   pulse = (
-                      0.009
+                      0.008
                       * np.sin(2 * np.pi * 110 * t)
-                      * (0.5 + 0.5 * np.sin(2 * np.pi * 1.2 * t))
+                      * (0.5 + 0.5 * np.sin(2 * np.pi * 1.15 * t))
                   )
-                  air = 0.003 * np.sin(2 * np.pi * 220 * t)
+                  air = 0.0025 * np.sin(2 * np.pi * 220 * t)
                   value = bass + pulse + air
                   return np.vstack([value, value]).T if value.ndim else [value, value]
 
               return AudioClip(audio_function, duration=duration, fps=44100)
 
-          def hit(start, freq=90, duration=0.18, volume=0.13):
+          def hit(start, freq=90, duration=0.18, volume=0.10):
               def audio_function(t):
                   t = np.array(t)
                   env = np.exp(-18 * t)
@@ -558,7 +565,7 @@ jobs:
 
               return AudioClip(audio_function, duration=duration, fps=44100).set_start(start)
 
-          def whoosh(start, duration=0.3, volume=0.045):
+          def whoosh(start, duration=0.3, volume=0.035):
               def audio_function(t):
                   t = np.array(t)
                   sweep = np.sin(2 * np.pi * (180 + 650 * t) * t)
@@ -569,8 +576,24 @@ jobs:
               return AudioClip(audio_function, duration=duration, fps=44100).set_start(start)
 
           def main():
-              log("Generating voice")
-              generate_voice()
+              log("Generating Piper voices scene by scene")
+
+              for scene in SCENES:
+                  voice_path = generate_scene_voice(scene)
+                  voice_clip = AudioFileClip(str(voice_path))
+                  voice_duration = voice_clip.duration
+                  voice_clip.close()
+
+                  scene["voice_path"] = voice_path
+                  scene["duration"] = max(
+                      scene["min_duration"],
+                      voice_duration + 0.45
+                  )
+
+                  log(f"{scene['id']} voice: {voice_duration:.2f}s | scene: {scene['duration']:.2f}s")
+
+              total_duration = sum(scene["duration"] for scene in SCENES)
+              log(f"Estimated final duration: {total_duration:.2f}s")
 
               log("Searching and downloading visuals")
               paths = []
@@ -580,6 +603,7 @@ jobs:
                   time.sleep(0.4)
 
               log("Rendering scenes")
+
               clips = [
                   make_scene(scene, path)
                   for scene, path in zip(SCENES, paths)
@@ -590,28 +614,39 @@ jobs:
 
               log(f"Video duration: {duration:.2f}s")
 
-              voice = AudioFileClip(str(VOICE_WAV)).fx(volumex, 1.0)
+              voice_tracks = []
+              scene_starts = []
+              cursor = 0.0
+
+              for scene in SCENES:
+                  scene_starts.append(cursor)
+                  voice_tracks.append(
+                      AudioFileClip(str(scene["voice_path"]))
+                      .set_start(cursor + 0.10)
+                      .fx(volumex, 1.15)
+                  )
+                  cursor += scene["duration"]
 
               music = (
                   make_music(duration)
                   .fx(audio_fadein, 0.4)
                   .fx(audio_fadeout, 1.0)
-                  .fx(volumex, 0.45)
+                  .fx(volumex, 0.30)
               )
 
               sfx = [
-                  hit(0.00, freq=70, volume=0.20),
-                  whoosh(2.00),
-                  hit(5.00),
-                  hit(17.00),
-                  whoosh(29.00),
-                  hit(41.00),
-                  whoosh(52.70),
-                  hit(53.00, freq=70, volume=0.18),
-                  hit(67.00, freq=130, volume=0.10),
+                  hit(scene_starts[0], freq=70, volume=0.16),
+                  whoosh(scene_starts[1]),
+                  hit(scene_starts[2]),
+                  hit(scene_starts[3]),
+                  whoosh(scene_starts[4]),
+                  hit(scene_starts[5]),
+                  whoosh(scene_starts[6] - 0.25),
+                  hit(scene_starts[6], freq=70, volume=0.16),
+                  hit(scene_starts[7], freq=130, volume=0.08),
               ]
 
-              audio = CompositeAudioClip([music, voice] + sfx).set_duration(duration)
+              audio = CompositeAudioClip([music] + voice_tracks + sfx).set_duration(duration)
               final = final.set_audio(audio)
 
               log("Exporting MP4")
@@ -639,6 +674,8 @@ jobs:
                       "Aucune musique commerciale connue.",
                       "Aucun logo central volontaire.",
                       "Aucune personne privée identifiable volontaire.",
+                      "Voix générée avec Piper TTS français.",
+                      "Audio généré scène par scène pour synchroniser voix et visuels.",
                       "Visuels issus de Pexels, Pixabay ou fonds générés.",
                       "Métadonnées sources conservées dans assets/metadata."
                   ]
@@ -670,8 +707,9 @@ jobs:
       - name: Upload final video
         uses: actions/upload-artifact@v4
         with:
-          name: top5-lieux-interdits-video
+          name: top5-lieux-interdits-video-v2-audio
           path: |
             output/top5_lieux_interdits.mp4
             output/publication.json
             assets/metadata/*.json
+            output/voices/*.wav
