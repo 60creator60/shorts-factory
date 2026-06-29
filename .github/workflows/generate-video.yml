@@ -104,10 +104,19 @@ jobs:
           for folder in [ASSETS, VIDEOS, META, BRANDING, OUTPUT, VOICES]:
               folder.mkdir(parents=True, exist_ok=True)
 
-          FINAL_MP4 = OUTPUT / "top5_lieux_interdits.mp4"
+          FINAL_MP4 = OUTPUT / "la_minute_culture_short.mp4"
           PUBLICATION_JSON = OUTPUT / "publication.json"
+          COVER_PNG = OUTPUT / "cover.png"
           PROFILE_PNG = BRANDING / "profile.png"
+
+          COVER_DURATION = 1.10
           SUBSCRIBE_OUTRO_DURATION = 1.15
+
+          COVER = {
+              "brand": "LA MINUTE CULTURE",
+              "headline": "",
+              "subline": "TOP 5",
+          }
 
           PIPER_MODEL = ROOT / "piper_voice" / "fr_FR-siwis-medium.onnx"
           PIPER_CONFIG = ROOT / "piper_voice" / "fr_FR-siwis-medium.onnx.json"
@@ -115,75 +124,80 @@ jobs:
           SCENES = [
               {
                   "id": "01_hook",
-                  "min_duration": 4.0,
-                  "title": "DES OBJETS\nDE RICHES",
-                  "subtitle": "Aujourd’hui,\nc’est banal",
-                  "voice_text": "Ces choses banales étaient autrefois des signes de richesse.",
-                  "keywords": ["luxury objects", "old money", "rich lifestyle", "historical objects"],
+                  "min_duration": 3.8,
+                  "title": "ENDROITS\nINTERDITS",
+                  "subtitle": "Des lieux réels…\npresque impossibles d’accès.",
+                  "voice_text": "Ces endroits sont réels… mais presque personne n’a le droit d’y entrer.",
+                  "keywords": ["locked door", "security door", "dark corridor", "remote island"],
                   "color": (18, 18, 24),
               },
               {
                   "id": "02_promise",
-                  "min_duration": 6.0,
-                  "title": "AVANT,\nÇA IMPRESSIONNAIT",
-                  "subtitle": "Top cinq\ntrès surprenant",
-                  "voice_text": "Voici cinq choses ordinaires qui faisaient vraiment leur effet il y a quelques siècles.",
-                  "keywords": ["history museum", "ancient table", "old palace", "vintage luxury"],
-                  "color": (28, 24, 18),
+                  "min_duration": 4.8,
+                  "title": "TOP 5\nRÉELS",
+                  "subtitle": "lieux interdits",
+                  "voice_text": "Voici cinq lieux réels où l’accès est interdit, ultra limité, ou réservé à quelques personnes seulement.",
+                  "keywords": ["world map dark", "map animation", "global locations"],
+                  "color": (12, 22, 35),
               },
               {
                   "id": "03_number_5",
                   "min_duration": 8.5,
-                  "title": "#5\nLE POIVRE",
-                  "subtitle": "Une épice\ntrès précieuse",
-                  "voice_text": "Au Moyen Âge, le poivre arrivait de très loin. Sur une table riche, en mettre partout disait : j’ai les moyens.",
-                  "keywords": ["black pepper", "spices", "medieval market", "rich banquet"],
-                  "color": (32, 24, 18),
+                  "title": "#5 ARCHIVES\nDU VATICAN",
+                  "title2": "Chercheurs qualifiés\nseulement",
+                  "subtitle": "Accès très encadré\npour les chercheurs.",
+                  "voice_text": "Numéro cinq : les Archives apostoliques du Vatican. L’accès est surtout réservé à des chercheurs qualifiés, avec des règles très strictes.",
+                  "keywords": ["old library", "archive shelves", "ancient books", "historical archive"],
+                  "color": (70, 46, 25),
               },
               {
                   "id": "04_number_4",
-                  "min_duration": 8.5,
-                  "title": "#4\nLE SUCRE",
-                  "subtitle": "Pas juste\nun ingrédient",
-                  "voice_text": "Pendant longtemps, le sucre n’était pas un simple ingrédient. Dans les cours européennes, sucrer sa boisson montrait le luxe.",
-                  "keywords": ["sugar cubes", "royal table", "tea cup", "old aristocracy"],
-                  "color": (38, 32, 28),
+                  "min_duration": 10.0,
+                  "title": "#4 COFFRE\nÀ GRAINES",
+                  "title2": "-18 °C\nsous l’Arctique",
+                  "subtitle": "Des graines conservées\nau froid extrême.",
+                  "voice_text": "Numéro quatre : le Svalbard Global Seed Vault. Dans une montagne arctique, plus d’un million d’échantillons de graines dorment à moins dix-huit degrés.",
+                  "keywords": ["arctic mountain", "snow mountain", "ice tunnel", "frozen vault"],
+                  "color": (20, 55, 84),
               },
               {
                   "id": "05_number_3",
-                  "min_duration": 8.5,
-                  "title": "#3\nLA GLACE",
-                  "subtitle": "Un froid\nde luxe",
-                  "voice_text": "Avant les frigos, la glace se coupait sur des lacs gelés, puis voyageait très loin. En été, c’était un privilège.",
-                  "keywords": ["ice blocks", "frozen lake", "ice harvesting", "old delivery"],
-                  "color": (18, 34, 44),
+                  "min_duration": 11.0,
+                  "title": "#3 LASCAUX\nFERMÉE",
+                  "title2": "Depuis\n1963",
+                  "subtitle": "La vraie grotte\nn’accueille plus le public.",
+                  "voice_text": "Numéro trois : Lascaux, en France. La vraie grotte est fermée au public depuis 1963, car l’humidité, la lumière et nos respirations menaçaient les peintures.",
+                  "keywords": ["cave", "cave painting", "prehistoric art", "rock art"],
+                  "color": (55, 34, 18),
               },
               {
                   "id": "06_number_2",
-                  "min_duration": 8.5,
-                  "title": "#2\nL’ALUMINIUM",
-                  "subtitle": "Plus chic\nque l’or",
-                  "voice_text": "Au dix-neuvième siècle, l’aluminium coûtait plus cher que l’or. Napoléon trois servait ses grands invités avec ce métal.",
-                  "keywords": ["aluminum metal", "silver cutlery", "napoleon era", "luxury dinner"],
-                  "color": (42, 42, 46),
+                  "min_duration": 10.5,
+                  "title": "#2 ÎLE AUX\nSERPENTS",
+                  "title2": "Accès\nultra limité",
+                  "subtitle": "Une île protégée\nau large du Brésil.",
+                  "voice_text": "Numéro deux : Queimada Grande, au Brésil. Là, on change de niveau : cette île protégée abrite une vipère endémique. Seules les autorités et certains chercheurs peuvent y accéder.",
+                  "keywords": ["tropical island drone", "remote island", "viper snake", "jungle island"],
+                  "color": (18, 65, 42),
               },
               {
                   "id": "07_number_1",
-                  "min_duration": 9.0,
-                  "title": "#1\nL’ANANAS",
-                  "subtitle": "Le fruit\nstatut social",
-                  "voice_text": "Et le plus fou : l’ananas. En Europe, il était si rare qu’on l’exposait aux dîners, parfois sans même le manger.",
-                  "keywords": ["pineapple", "royal dinner", "luxury fruit", "old banquet"],
-                  "color": (46, 34, 18),
+                  "min_duration": 14.0,
+                  "title": "#1\nSURTSEY",
+                  "title2": "Île\nlaboratoire",
+                  "subtitle": "Même poser le pied\npeut fausser l’expérience.",
+                  "voice_text": "Numéro un : Surtsey, en Islande. Cette île est née d’une éruption en 1963. Même poser le pied dessus peut fausser l’expérience scientifique : observer comment la vie colonise une terre neuve.",
+                  "keywords": ["volcanic island", "black lava coast", "Iceland ocean", "volcanic rock"],
+                  "color": (20, 23, 27),
               },
               {
                   "id": "08_question",
-                  "min_duration": 5.5,
-                  "title": "LEQUEL\nT’ÉTONNE ?",
-                  "subtitle": "Réponds en\ncommentaire",
-                  "voice_text": "Laquelle de ces richesses oubliées t’a le plus surpris ? Dis-le en commentaire.",
-                  "keywords": ["thinking person", "question mark", "social media comments", "curious audience"],
-                  "color": (18, 18, 24),
+                  "min_duration": 3.8,
+                  "title": "LEQUEL\nTU CHOISIS ?",
+                  "subtitle": "À regarder…\nde très loin.",
+                  "voice_text": "Lequel vous donne envie de regarder… de très loin ?",
+                  "keywords": ["world map dark", "remote island", "mysterious place"],
+                  "color": (16, 16, 22),
               },
           ]
 
@@ -351,6 +365,189 @@ jobs:
                   "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
                   size
               )
+
+          def wrap_text_pixels(draw, text, current_font, max_width):
+              words = text.replace("\n", " ").split()
+              lines = []
+              current = ""
+
+              for word in words:
+                  test = word if not current else current + " " + word
+                  box = draw.textbbox((0, 0), test, font=current_font, stroke_width=8)
+                  width = box[2] - box[0]
+
+                  if width <= max_width:
+                      current = test
+                  else:
+                      if current:
+                          lines.append(current)
+                      current = word
+
+              if current:
+                  lines.append(current)
+
+              return "\n".join(lines)
+
+          def multiline_center(
+              draw,
+              text,
+              y,
+              size,
+              fill,
+              stroke_fill=(0, 0, 0, 255),
+              stroke_width=6,
+              spacing_ratio=0.18,
+              max_width=900
+          ):
+              current_font = font(size)
+              text = wrap_text_pixels(draw, text, current_font, max_width)
+              spacing = int(size * spacing_ratio)
+
+              box = draw.multiline_textbbox(
+                  (0, 0),
+                  text,
+                  font=current_font,
+                  spacing=spacing,
+                  stroke_width=stroke_width,
+                  align="center"
+              )
+
+              text_w = box[2] - box[0]
+              text_h = box[3] - box[1]
+              x = (WIDTH - text_w) // 2
+
+              draw.multiline_text(
+                  (x, y),
+                  text,
+                  font=current_font,
+                  fill=fill,
+                  spacing=spacing,
+                  align="center",
+                  stroke_width=stroke_width,
+                  stroke_fill=stroke_fill
+              )
+
+              return y + text_h
+
+          def get_cover_headline():
+              headline = str(COVER.get("headline", "")).strip()
+
+              if headline:
+                  return headline.upper()
+
+              for scene in SCENES:
+                  if scene.get("id") in ["02_promise", "02_promesse"]:
+                      subtitle = str(scene.get("subtitle", "")).strip()
+                      if subtitle:
+                          return subtitle.upper()
+
+              for scene in SCENES:
+                  scene_id = str(scene.get("id", ""))
+                  if scene_id.startswith("03_"):
+                      title = str(scene.get("title", "")).replace("#5", "").strip()
+                      if title:
+                          return title.upper()
+
+              return "TOP 5"
+
+          def make_cover_png():
+              brand = str(COVER.get("brand", "LA MINUTE CULTURE")).strip().upper()
+              headline = get_cover_headline()
+              subline = str(COVER.get("subline", "TOP 5")).strip().upper()
+
+              image = Image.new("RGBA", (WIDTH, HEIGHT), (10, 10, 14, 255))
+              draw = ImageDraw.Draw(image)
+
+              for y in range(HEIGHT):
+                  factor = y / HEIGHT
+                  r = int(10 + factor * 8)
+                  g = int(10 + factor * 10)
+                  b = int(14 + factor * 18)
+                  draw.line((0, y, WIDTH, y), fill=(r, g, b, 255))
+
+              draw.ellipse((-180, 180, 280, 640), outline=(255, 210, 40, 120), width=8)
+              draw.ellipse((800, 230, 1240, 670), outline=(255, 210, 40, 80), width=6)
+              draw.ellipse((120, 1240, 980, 2100), outline=(255, 255, 255, 18), width=4)
+
+              draw.rounded_rectangle(
+                  (90, 350, WIDTH - 90, 1450),
+                  radius=38,
+                  fill=(0, 0, 0, 78),
+                  outline=(255, 255, 255, 24),
+                  width=2
+              )
+
+              multiline_center(
+                  draw,
+                  brand,
+                  y=455,
+                  size=82,
+                  fill=(255, 215, 0, 255),
+                  stroke_width=8,
+                  max_width=920
+              )
+
+              pill_x1, pill_y1, pill_x2, pill_y2 = 350, 700, 730, 810
+
+              draw.rounded_rectangle(
+                  (pill_x1, pill_y1, pill_x2, pill_y2),
+                  radius=30,
+                  fill=(255, 215, 0, 255)
+              )
+
+              pill_font = font(56)
+              pill_box = draw.textbbox((0, 0), subline, font=pill_font)
+              pill_w = pill_box[2] - pill_box[0]
+              pill_h = pill_box[3] - pill_box[1]
+
+              draw.text(
+                  ((WIDTH - pill_w) // 2, pill_y1 + ((pill_y2 - pill_y1 - pill_h) // 2) - 6),
+                  subline,
+                  font=pill_font,
+                  fill=(0, 0, 0, 255)
+              )
+
+              multiline_center(
+                  draw,
+                  headline,
+                  y=895,
+                  size=118,
+                  fill=(255, 255, 255, 255),
+                  stroke_width=10,
+                  max_width=890
+              )
+
+              signature = "1 minute • 1 dose de culture"
+              sig_font = font(42)
+              sig_box = draw.textbbox((0, 0), signature, font=sig_font)
+              sig_w = sig_box[2] - sig_box[0]
+
+              draw.text(
+                  ((WIDTH - sig_w) // 2, 1350),
+                  signature,
+                  font=sig_font,
+                  fill=(255, 215, 0, 220)
+              )
+
+              image.save(COVER_PNG)
+              return COVER_PNG
+
+          def make_cover_clip(duration=COVER_DURATION):
+              cover_path = make_cover_png()
+
+              clip = (
+                  ImageClip(str(cover_path))
+                  .set_duration(duration)
+                  .resize(lambda t: 1.0 + 0.025 * (t / max(duration, 0.1)))
+                  .crop(
+                      x_center=WIDTH / 2,
+                      y_center=HEIGHT / 2,
+                      width=WIDTH,
+                      height=HEIGHT
+                  )
+              )
+
+              return clip
 
           def text_image(
               text,
@@ -635,9 +832,6 @@ jobs:
               if "#1" in scene["title"]:
                   title_size = 120
 
-              if "ENDROITS" in scene["title"]:
-                  title_size = 110
-
               title_clip = ImageClip(
                   text_image(scene["title"], WIDTH, 360, title_size, stroke_width=10)
               ).set_duration(
@@ -698,7 +892,7 @@ jobs:
                   value = volume * env * np.sin(2 * np.pi * freq * t)
                   return np.vstack([value, value]).T if value.ndim else [value, value]
 
-              return AudioClip(audio_function, duration=duration, fps=44100).set_start(start)
+              return AudioClip(audio_function, duration=duration, fps=44100).set_start(max(0, start))
 
           def whoosh(start, duration=0.3, volume=0.035):
               def audio_function(t):
@@ -708,7 +902,7 @@ jobs:
                   value = volume * sweep * env
                   return np.vstack([value, value]).T if value.ndim else [value, value]
 
-              return AudioClip(audio_function, duration=duration, fps=44100).set_start(start)
+              return AudioClip(audio_function, duration=duration, fps=44100).set_start(max(0, start))
 
           def ding(start, duration=0.22, volume=0.16):
               def audio_function(t):
@@ -720,7 +914,28 @@ jobs:
                   )
                   return np.vstack([value, value]).T if value.ndim else [value, value]
 
-              return AudioClip(audio_function, duration=duration, fps=44100).set_start(start)
+              return AudioClip(audio_function, duration=duration, fps=44100).set_start(max(0, start))
+
+          def make_transition_sfx(scene_starts, outro_start):
+              sfx = [
+                  whoosh(0.00, duration=0.35, volume=0.05),
+                  hit(0.18, freq=95, volume=0.10),
+              ]
+
+              for index, start in enumerate(scene_starts):
+                  if index == 0:
+                      sfx.append(hit(start, freq=70, volume=0.16))
+                  elif index % 2 == 0:
+                      sfx.append(hit(start, freq=100, volume=0.09))
+                  else:
+                      sfx.append(whoosh(start, duration=0.26, volume=0.030))
+
+              if scene_starts:
+                  sfx.append(hit(scene_starts[-1], freq=130, volume=0.08))
+
+              sfx.append(ding(outro_start + 0.08, volume=0.16))
+
+              return sfx
 
           def main():
               log("Generating Piper voices scene by scene")
@@ -739,8 +954,8 @@ jobs:
 
                   log(f"{scene['id']} voice: {voice_duration:.2f}s | scene: {scene['duration']:.2f}s")
 
-              total_duration = sum(scene["duration"] for scene in SCENES) + SUBSCRIBE_OUTRO_DURATION
-              log(f"Estimated final duration with outro: {total_duration:.2f}s")
+              total_duration = COVER_DURATION + sum(scene["duration"] for scene in SCENES) + SUBSCRIBE_OUTRO_DURATION
+              log(f"Estimated final duration with cover and outro: {total_duration:.2f}s")
 
               log("Searching and downloading visuals")
               paths = []
@@ -749,19 +964,21 @@ jobs:
                   paths.append(get_scene_video(scene))
                   time.sleep(0.4)
 
-              log("Rendering scenes")
+              log("Rendering cover and scenes")
 
-              clips = [
+              cover_clip = make_cover_clip(duration=COVER_DURATION)
+
+              scene_clips = [
                   make_scene(scene, path)
                   for scene, path in zip(SCENES, paths)
               ]
 
               subscribe_outro = make_subscribe_outro(
-                  clips[-1],
+                  scene_clips[-1],
                   duration=SUBSCRIBE_OUTRO_DURATION
               )
 
-              clips.append(subscribe_outro)
+              clips = [cover_clip] + scene_clips + [subscribe_outro]
 
               final = concatenate_videoclips(clips, method="compose")
               duration = final.duration
@@ -770,7 +987,7 @@ jobs:
 
               voice_tracks = []
               scene_starts = []
-              cursor = 0.0
+              cursor = COVER_DURATION
 
               for scene in SCENES:
                   scene_starts.append(cursor)
@@ -790,18 +1007,7 @@ jobs:
                   .fx(volumex, 0.30)
               )
 
-              sfx = [
-                  hit(scene_starts[0], freq=70, volume=0.16),
-                  whoosh(scene_starts[1]),
-                  hit(scene_starts[2]),
-                  hit(scene_starts[3]),
-                  whoosh(scene_starts[4]),
-                  hit(scene_starts[5]),
-                  whoosh(scene_starts[6] - 0.25),
-                  hit(scene_starts[6], freq=70, volume=0.16),
-                  hit(scene_starts[7], freq=130, volume=0.08),
-                  ding(outro_start + 0.08, volume=0.16),
-              ]
+              sfx = make_transition_sfx(scene_starts, outro_start)
 
               audio = CompositeAudioClip([music] + voice_tracks + sfx).set_duration(duration)
               final = final.set_audio(audio)
@@ -820,12 +1026,12 @@ jobs:
 
               publication = {
                   "titre": "Ces 5 lieux existent… mais presque personne ne peut y entrer",
-                  "description_tiktok": "5 lieux réels, protégés pour des raisons scientifiques, historiques ou naturelles. Le numéro 1 est incroyable. Visuels illustratifs.",
+                  "description_tiktok": "5 lieux réels, protégés pour des raisons scientifiques, historiques ou naturelles. Visuels illustratifs. Voix de synthèse.",
                   "description_youtube_shorts": "Voici 5 endroits réels où l’accès est extrêmement limité : archives, grottes, îles protégées et laboratoire naturel. Visuels illustratifs.",
                   "description_instagram_reels": "Des lieux réels, mais presque inaccessibles. Vous choisiriez lequel… de loin ? Visuels illustratifs.",
-                  "hashtags": "#Top5 #LieuxInterdits #FaitsInsolites #CultureGenerale #MysteresDuMonde #Histoire #Science #VoyageCurieux #ShortsFR #ReelsFrance",
+                  "hashtags": "#viral #Top5 #LieuxInterdits #FaitsInsolites #CultureGenerale #MysteresDuMonde #LaMinuteCulture",
                   "commentaire_epingle": "Vous visiteriez lequel… si c’était autorisé ?",
-                  "mention": "Visuels illustratifs / certaines images peuvent être générées par IA.",
+                  "mention": "Visuels illustratifs. Voix de synthèse.",
                   "checklist": [
                       "Aucun extrait TikTok, YouTube, Instagram, film, série, TV ou match.",
                       "Aucune musique commerciale connue.",
@@ -833,6 +1039,7 @@ jobs:
                       "Aucune personne privée identifiable volontaire.",
                       "Voix générée avec Piper TTS français.",
                       "Audio généré scène par scène pour synchroniser voix et visuels.",
+                      "Cover automatique générée et exportée en PNG.",
                       "Outro abonnement automatique avec logo, coche et son ding.",
                       "Visuels issus de Pexels, Pixabay ou fonds générés.",
                       "Métadonnées sources conservées dans assets/metadata."
@@ -865,9 +1072,10 @@ jobs:
       - name: Upload final video
         uses: actions/upload-artifact@v4
         with:
-          name: top5-lieux-interdits-video-v3-outro
+          name: la-minute-culture-video-cover-outro
           path: |
-            output/top5_lieux_interdits.mp4
+            output/la_minute_culture_short.mp4
             output/publication.json
+            output/cover.png
             assets/metadata/*.json
             output/voices/*.wav
